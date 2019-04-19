@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts        #-}
 {-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE PatternGuards           #-}
-{-# LANGUAGE QuasiQuotes             #-}
 {-# LANGUAGE Rank2Types              #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE TypeFamilies            #-}
@@ -114,20 +113,20 @@ import qualified Yesod.Auth.Util.PasswordStore as PS
 import           Control.Applicative           ((<$>), (<*>))
 import qualified Crypto.Hash                   as H
 import qualified Crypto.Nonce                  as Nonce
-import           Data.ByteString.Base16   as B16
-import           Data.Text                (Text)
-import qualified Data.Text                as TS
-import qualified Data.Text                as T
-import           Data.Text.Encoding       (decodeUtf8With, encodeUtf8)
-import qualified Data.Text.Encoding       as TE
-import           Data.Text.Encoding.Error (lenientDecode)
-import           Data.Time                (addUTCTime, getCurrentTime)
-import           Safe                     (readMay)
-import           System.IO.Unsafe         (unsafePerformIO)
+import           Data.ByteString.Base16        as B16
+import           Data.Text                     (Text)
+import qualified Data.Text                     as TS
+import qualified Data.Text                     as T
+import           Data.Text.Encoding            (decodeUtf8With, encodeUtf8)
+import qualified Data.Text.Encoding            as TE
+import           Data.Text.Encoding.Error      (lenientDecode)
+import           Data.Time                     (addUTCTime, getCurrentTime)
+import           Safe                          (readMay)
+import           System.IO.Unsafe              (unsafePerformIO)
 import qualified Text.Email.Validate
-import           Data.Aeson.Types (Parser, Result(..), parseMaybe, withObject, (.:?))
-import           Data.Maybe (isJust)
-import           Data.ByteArray (convert)
+import           Data.Aeson.Types              (Parser, Result(..), parseMaybe, withObject, (.:?))
+import           Data.Maybe                    (isJust)
+import           Data.ByteArray                (convert)
 
 loginR, registerR, forgotPasswordR, setpassR :: AuthRoute
 loginR = PluginR "email" ["login"]
@@ -138,29 +137,17 @@ setpassR = PluginR "email" ["set-password"]
 verifyURLHasSetPassText :: Text
 verifyURLHasSetPassText = "has-set-pass"
 
--- |
---
--- @since 1.4.5
-verifyR :: Text -> Text -> AuthRoute -- FIXME
+verifyR :: Text -> Text -> AuthRoute
 verifyR eid verkey = PluginR "email" path
     where path = "verify":eid:verkey:[verifyURLHasSetPassText]
-
 
 type Email = Text
 type VerKey = Text
 type VerUrl = Text
 type SaltedPass = Text
 type VerStatus = Bool
-
--- | An Identifier generalizes an email address to allow users to log in with
--- some other form of credentials (e.g., username).
---
--- Note that any of these other identifiers must not be valid email addresses.
---
--- @since 1.2.0
 type Identifier = Text
 
--- | Data stored in a database for each e-mail address.
 data EmailCreds site = EmailCreds
     { emailCredsId     :: AuthEmailId site
     , emailCredsAuthId :: Maybe (AuthId site)
@@ -176,50 +163,20 @@ class ( YesodAuth site
   => YesodAuthEmail site where
     type AuthEmailId site
 
-    -- | Add a new email address to the database, but indicate that the address
-    -- has not yet been verified.
-    --
-    -- @since 1.1.0
     addUnverified :: Email -> VerKey -> AuthHandler site (AuthEmailId site)
 
-    -- | Similar to `addUnverified`, but comes with the registered password.
-    --
-    -- The default implementation is just `addUnverified`, which ignores the password.
-    --
-    -- You may override this to save the salted password to your database.
-    --
-    -- @since 1.6.4
     addUnverifiedWithPass :: Email -> VerKey -> SaltedPass -> AuthHandler site (AuthEmailId site)
     addUnverifiedWithPass email verkey _ = addUnverified email verkey
 
-    -- | Send an email to the given address to verify ownership.
-    --
-    -- @since 1.1.0
     sendVerifyEmail :: Email -> VerKey -> VerUrl -> AuthHandler site ()
 
-    -- | Get the verification key for the given email ID.
-    --
-    -- @since 1.1.0
     getVerifyKey :: AuthEmailId site -> AuthHandler site (Maybe VerKey)
 
-    -- | Set the verification key for the given email ID.
-    --
-    -- @since 1.1.0
     setVerifyKey :: AuthEmailId site -> VerKey -> AuthHandler site ()
 
-    -- | Hash and salt a password
-    --
-    -- Default: 'saltPass'.
-    --
-    -- @since 1.4.20
     hashAndSaltPassword :: Text -> AuthHandler site SaltedPass
     hashAndSaltPassword = liftIO . saltPass
 
-    -- | Verify a password matches the stored password for the given account.
-    --
-    -- Default: Fetch a password with 'getPassword' and match using 'Yesod.Auth.Util.PasswordStore.verifyPassword'.
-    --
-    -- @since 1.4.20
     verifyPassword :: Text -> SaltedPass -> AuthHandler site Bool
     verifyPassword plain salted = return $ isValidPass plain salted
 
