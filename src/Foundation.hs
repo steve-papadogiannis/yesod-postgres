@@ -15,23 +15,21 @@
 
 module Foundation where
 
-import Import.NoFoundation hiding (unpack, putStrLn)
-import Database.Persist.Sql (ConnectionPool, runSqlPool)
-import Text.Jasmine         (minifym)
-import Control.Monad.Logger (LogSource)
-import Network.Mail.Mime
+import           Import.NoFoundation           hiding (unpack, putStrLn)
+import           Database.Persist.Sql          (ConnectionPool, runSqlPool)
+import           Text.Jasmine                  (minifym)
+import           Control.Monad.Logger          (LogSource)
+import           Network.Mail.Mime
 import qualified Data.Text.Lazy.Encoding
-import Text.Shakespeare.Text (stext)
-import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
-import Data.Text (Text, unpack)
-import Control.Monad (join)
-import Prelude (putStrLn)
-
-import Custom.Auth.Email
-
-import Yesod.Default.Util   (addStaticContentExternal)
-import Yesod.Core.Types     (Logger)
-import qualified Yesod.Core.Unsafe as Unsafe
+import           Text.Shakespeare.Text         (stext)
+import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
+import           Data.Text                     (Text, unpack)
+import           Control.Monad                 (join)
+import           Prelude                       (putStrLn)
+import           Custom.Auth.Email
+--import           Yesod.Default.Util            (addStaticContentExternal)
+import           Yesod.Core.Types              (Logger)
+import qualified Yesod.Core.Unsafe              as Unsafe
 
 -- | The foundation datatype for your application. This can be a good place to
 -- keep settings and values requiring initialization before your application
@@ -39,7 +37,6 @@ import qualified Yesod.Core.Unsafe as Unsafe
 -- access to the data present here.
 data App = App
     { appSettings    :: AppSettings
-    , appStatic      :: Static -- ^ Settings for static file serving.
     , appConnPool    :: ConnectionPool -- ^ Database connection pool.
     , appHttpManager :: Manager
     , appLogger      :: Logger
@@ -86,7 +83,6 @@ instance Yesod App where
     isAuthorized HomeR _ = return Authorized
     isAuthorized FaviconR _ = return Authorized
     isAuthorized RobotsR _ = return Authorized
-    isAuthorized (StaticR _) _ = return Authorized
 
     -- the profile route requires that the user is authenticated, so we
     -- delegate to that function
@@ -96,25 +92,25 @@ instance Yesod App where
     -- and names them based on a hash of their content. This allows
     -- expiration dates to be set far in the future without worry of
     -- users receiving stale content.
-    addStaticContent
-        :: Text  -- ^ The file extension
-        -> Text -- ^ The MIME content type
-        -> LByteString -- ^ The contents of the file
-        -> Handler (Maybe (Either Text (Route App, [(Text, Text)])))
-    addStaticContent ext mime content = do
-        master <- getYesod
-        let staticDir = appStaticDir $ appSettings master
-        addStaticContentExternal
-            minifym
-            genFileName
-            staticDir
-            (StaticR . flip StaticRoute [])
-            ext
-            mime
-            content
-      where
-        -- Generate a unique filename based on the content itself
-        genFileName lbs = "autogen-" ++ base64md5 lbs
+--    addStaticContent
+--        :: Text  -- ^ The file extension
+--        -> Text -- ^ The MIME content type
+--        -> LByteString -- ^ The contents of the file
+--        -> Handler (Maybe (Either Text (Route App, [(Text, Text)])))
+--    addStaticContent ext mime content = do
+--        master <- getYesod
+--        let staticDir = appStaticDir $ appSettings master
+--        addStaticContentExternal
+--            minifym
+--            genFileName
+--            staticDir
+--            (StaticR . flip StaticRoute [])
+--            ext
+--            mime
+--            content
+--      where
+--        -- Generate a unique filename based on the content itself
+--        genFileName lbs = "autogen-" ++ base64md5 lbs
 
     -- What messages should be logged. The following includes all messages when
     -- in development, and warnings and errors in production.
@@ -199,8 +195,11 @@ instance YesodAuthEmail App where
                 |]
             , partHeaders = []
             }
+
     getVerifyKey = liftHandler . runDB . fmap (join . fmap userVerkey) . get
+
     setVerifyKey uid key = liftHandler $ runDB $ update uid [UserVerkey =. Just key]
+
     verifyAccount uid = liftHandler $ runDB $ do
         mu <- get uid
         case mu of
@@ -208,8 +207,11 @@ instance YesodAuthEmail App where
             Just u -> do
                 update uid [UserVerified =. True]
                 return $ Just uid
+
     getPassword = liftHandler . runDB . fmap (join . fmap userPassword) . get
+
     setPassword uid pass = liftHandler . runDB $ update uid [UserPassword =. Just pass]
+
     getEmailCreds email = liftHandler $ runDB $ do
         mu <- getBy $ UniqueUser email
         case mu of
@@ -221,6 +223,7 @@ instance YesodAuthEmail App where
                 , emailCredsVerkey = userVerkey u
                 , emailCredsEmail = email
                 }
+
     getEmail = liftHandler . runDB . fmap (fmap userEmail) . get
 
 

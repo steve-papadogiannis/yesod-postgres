@@ -399,6 +399,7 @@ registerHelper allowUsername forgotPassword = do
                       render <- getUrlRender
                       tp <- getRouteToParent
                       let verUrl = render $ tp $ verifyR (toPathPiece lid) verKey
+                      sendVerifyEmail email verKey verUrl
                       confirmationEmailSentResponse identifier
 
 
