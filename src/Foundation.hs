@@ -95,6 +95,8 @@ instance Yesod App where
         appShouldLogAll (appSettings app)
             || level == LevelWarn
             || level == LevelError
+            || level == LevelInfo
+            || level == LevelDebug
 
     makeLogger :: App -> IO Logger
     makeLogger = return . appLogger
@@ -130,6 +132,9 @@ instance YesodAuthEmail App where
 
     addUnverified email verkey =
         liftHandler $ runDB $ insert $ User email Nothing (Just verkey) False
+
+    addUnverifiedWithPass email verkey salted =
+      liftHandler $ runDB $ insert $ User email (Just salted) (Just verkey) False
 
     sendVerifyEmail email _ verurl = do
         liftIO $ putStrLn $ "Copy/ Paste this URL in your browser:" ++ unpack verurl

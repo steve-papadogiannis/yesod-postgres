@@ -1,10 +1,13 @@
+{-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE ConstrainedClassMethods #-}
 {-# LANGUAGE FlexibleContexts        #-}
-{-# LANGUAGE OverloadedStrings       #-}
 {-# LANGUAGE PatternGuards           #-}
 {-# LANGUAGE Rank2Types              #-}
 {-# LANGUAGE ScopedTypeVariables     #-}
 {-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE TemplateHaskell         #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+
 -- | A Yesod plugin for Authentication via e-mail
 --
 -- This plugin works out of the box by only setting a few methods on
@@ -106,7 +109,7 @@ module Custom.Auth.Email
     ) where
 
 import           Custom.Auth
-import qualified Yesod.Auth.Message            as Msg
+import qualified Custom.Auth.Message            as Msg
 import           Yesod.Core
 import           Yesod.Form
 import qualified Yesod.Auth.Util.PasswordStore as PS
@@ -114,7 +117,7 @@ import           Control.Applicative           ((<$>), (<*>))
 import qualified Crypto.Hash                   as H
 import qualified Crypto.Nonce                  as Nonce
 import           Data.ByteString.Base16        as B16
-import           Data.Text                     (Text)
+import           Data.Text                     (Text, unpack)
 import qualified Data.Text                     as TS
 import qualified Data.Text                     as T
 import           Data.Text.Encoding            (decodeUtf8With, encodeUtf8)
@@ -124,9 +127,10 @@ import           Data.Time                     (addUTCTime, getCurrentTime)
 import           Safe                          (readMay)
 import           System.IO.Unsafe              (unsafePerformIO)
 import qualified Text.Email.Validate
-import           Data.Aeson.Types              (Parser, Result(..), parseMaybe, withObject, (.:?))
+import           Data.Aeson.Types              (Parser, Result(..), parseMaybe, withObject, (.:?), parseEither)
 import           Data.Maybe                    (isJust)
 import           Data.ByteArray                (convert)
+import           Data.Aeson
 
 loginR, registerR, forgotPasswordR, setpassR :: AuthRoute
 loginR = PluginR "email" ["login"]
@@ -391,29 +395,60 @@ getVerifyR lid key hasSetPass = do
     invalidKey mr = messageJson401 (mr msgIk)
 
 
-parseCreds :: Value -> Parser (Text, Text)
-parseCreds = withObject "creds" (\obj -> do
+parseEmailField :: Value -> Parser Text
+parseEmailField = withObject "email" (\obj -> do
                                    email' <- obj .: "email"
-                                   pass <- obj .: "password"
-                                   return (email', pass))
+                                   return email')
+
+parsePasswordField :: Value -> Parser Text
+parsePasswordField = withObject "password" (\obj -> do
+                         password' <- obj .: "password"
+                         return password')
+
+type Password = Text
+
+data InvalidJSONLoginCreds = MalformedJSON
+                           | MissingEmail
+                           | MissingPassword
+                           | LoginCreds Email Password
+                           deriving Show
 
 postLoginR :: YesodAuthEmail master => AuthHandler master Value
 postLoginR = do
-    result <- runInputPostResult $ (,)
-        <$> ireq textField "email"
-        <*> ireq textField "password"
 
-    midentifier <- case result of
-                     FormSuccess (iden, pass) -> return $ Just (iden, pass)
-                     _ -> do
-                       (creds :: Result Value) <- parseCheckJsonBody
-                       case creds of
-                         Error _ -> return Nothing
-                         Success val -> return $ parseMaybe parseCreds val
+    midentifier <- do
+        (creds :: Result Value) <- parseCheckJsonBody
+        case creds of
+            Error error -> do
+              $(logError) $ T.pack $ show $ error
+              return MalformedJSON
+            Success val -> do
+              $(logInfo) $ T.pack $ show val
+              let a = parseEither parseEmailField val
+              $(logInfo) $ T.pack $ show a
+              case a of
+                Left missingEmailError -> do
+                  $(logError) $ T.pack $ show missingEmailError
+                  return MissingEmail
+                Right b -> do
+                  $(logInfo) $ T.pack $ show b
+                  let c = parseEither parsePasswordField val
+                  $(logInfo) $ T.pack $ show c
+                  case c of
+                    Left missingPasswordError -> do
+                      $(logError) $ T.pack $ show missingPasswordError
+                      return MissingPassword
+                    Right d -> do
+                      $(logInfo) $ T.pack $ show d
+                      return $ LoginCreds b d
+
+    $(logInfo) $ T.pack $ show midentifier
 
     case midentifier of
-      Nothing -> loginErrorMessageI Msg.NoIdentifierProvided
-      Just (identifier, pass) -> do
+      MalformedJSON      -> loginErrorMessageI Msg.MalformedJSONMessage
+      MissingEmail       -> loginErrorMessageI Msg.MissingEmailMessage
+      MissingPassword    -> loginErrorMessageI Msg.MissingPasswordMessage
+      LoginCreds identifier pass -> do
           mecreds <- getEmailCreds identifier
           maid <-
               case ( mecreds >>= emailCredsAuthId
@@ -518,12 +553,8 @@ postPasswordR = do
                   Left e -> loginErrorMessage e
                   Right () -> do
                      salted <- hashAndSaltPassword new
---                     y <- do
                      setPassword aid salted
                      deleteSession loginLinkKey
---                                addMessageI "success" msgOk
---                                getYesod
-
                      mr <- getMessageRender
                      provideJsonMessage (mr msgOk)
 

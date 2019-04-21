@@ -58,8 +58,8 @@ import           Network.HTTP.Client        (Manager, Request, withResponse, Res
 import           Network.HTTP.Client.TLS    (getGlobalManager)
 import           Yesod.Core
 import           Yesod.Persist
-import           Yesod.Auth.Message         (AuthMessage, defaultMessage)
-import qualified Yesod.Auth.Message         as Msg
+import           Custom.Auth.Message        (AuthMessage, defaultMessage)
+import qualified Custom.Auth.Message        as Msg
 import           Yesod.Form                 (FormMessage)
 import           Data.Typeable              (Typeable)
 import           Control.Exception          (Exception)
