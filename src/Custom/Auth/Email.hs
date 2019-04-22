@@ -424,9 +424,9 @@ postLoginR = do
               return MalformedJSON
             Success val -> do
               $(logInfo) $ T.pack $ show val
-              let a = parseEither parseEmailField val
-              $(logInfo) $ T.pack $ show a
-              case a of
+              let eitherEmailField = parseEither parseEmailField val
+              $(logInfo) $ T.pack $ show eitherEmailField
+              case eitherEmailField of
                 Left missingEmailError -> do
                   $(logError) $ T.pack $ show missingEmailError
                   return MissingEmail
