@@ -71,6 +71,9 @@ data AuthMessage =
     | MalformedJSONMessage
     | MissingEmailMessage
     | MissingPasswordMessage
+    | AccountNotVerified Text
+    | PasswordNotSet Text 
+    | PasswordMismatch Text
 {-# DEPRECATED Logout "Please, use LogoutTitle instead." #-}
 
 -- | Defaults to 'englishMessage'.
@@ -126,6 +129,9 @@ englishMessage AuthError = "Authentication Error" -- FIXME by Google Translate
 englishMessage MalformedJSONMessage = "Malformed Credentials JSON"
 englishMessage MissingEmailMessage = "No email provided"
 englishMessage MissingPasswordMessage = "No password provided"
+englishMessage (AccountNotVerified email) = "Account for user " `mappend` email `mappend` " is not verified"
+englishMessage (PasswordNotSet email) = "Password is not set for user " `mappend` email
+englishMessage (PasswordMismatch email) = "Password given mismatches with password stored in DB for user " `mappend` email
 
 portugueseMessage :: AuthMessage -> Text
 portugueseMessage NoOpenID = "Nenhum identificador OpenID encontrado"
