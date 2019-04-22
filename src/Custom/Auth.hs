@@ -267,7 +267,6 @@ setCredsRedirect creds = do
         Authenticated aid -> do
             setSession credsKey $ toPathPiece aid
             messageJson200 "Login Successful"
---            sendResponse res
 
         UserError msg ->
             case authRoute y of
@@ -309,16 +308,13 @@ authLayoutJson
   :: (ToJSON j, MonadAuthHandler master m)
   => m j  -- ^ JSON
   -> m Value
-authLayoutJson json = do
-   fmap toJSON json
+authLayoutJson json = fmap toJSON json
 
 -- | Clears current user credentials for the session.
 
 clearCreds :: (MonadHandler m, YesodAuth (HandlerSite m))
            => m ()
-clearCreds = do
---    y <- getYesod
-    deleteSession credsKey
+clearCreds = deleteSession credsKey
 
 getCheckR :: AuthHandler master Value
 getCheckR = do

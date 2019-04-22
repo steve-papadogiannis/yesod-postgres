@@ -17,7 +17,6 @@ module Foundation where
 
 import           Import.NoFoundation           hiding (unpack, putStrLn)
 import           Database.Persist.Sql          (ConnectionPool, runSqlPool)
-import           Text.Jasmine                  (minifym)
 import           Control.Monad.Logger          (LogSource)
 import           Network.Mail.Mime
 import qualified Data.Text.Lazy.Encoding
@@ -28,7 +27,7 @@ import           Control.Monad                 (join)
 import           Prelude                       (putStrLn)
 import           Custom.Auth.Email
 import           Yesod.Core.Types              (Logger)
-import qualified Yesod.Core.Unsafe              as Unsafe
+import qualified Yesod.Core.Unsafe             as Unsafe
 
 -- | The foundation datatype for your application. This can be a good place to
 -- keep settings and values requiring initialization before your application
@@ -145,7 +144,7 @@ instance YesodAuthEmail App where
             , mailHeaders =
                 [ ("Subject", "Verify your email address")
                 ]
-            , mailParts = [[textPart, htmlPart]]
+            , mailParts = [[textPart, htmlPart1]]
             }
       where
         textPart = Part
@@ -162,7 +161,7 @@ instance YesodAuthEmail App where
                 |]
             , partHeaders = []
             }
-        htmlPart = Part
+        htmlPart1 = Part
             { partType = "text/html; charset=utf-8"
             , partEncoding = None
             , partFilename = Nothing
@@ -184,7 +183,7 @@ instance YesodAuthEmail App where
         mu <- get uid
         case mu of
             Nothing -> return Nothing
-            Just u -> do
+            Just _ -> do
                 update uid [UserVerified =. True]
                 return $ Just uid
 
