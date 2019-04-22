@@ -482,16 +482,19 @@ postLoginR = do
                          email'
                          [("verifiedEmail", email')]
             PasswordNotSet ->
+                $(logError) Msg.PasswordNotSet
                 loginErrorMessageI $
                                    if isEmail
                                    then Msg.InvalidEmailPass
                                    else Msg.InvalidUsernamePass
             PasswordMismatch ->
+                $(logError) Msg.PasswordMismatch
                 loginErrorMessageI $
                                    if isEmail
                                    then Msg.InvalidEmailPass
                                    else Msg.InvalidUsernamePass
             AccountNotVerified ->
+                $(logError) Msg.AccountNotVerified
                 loginErrorMessageI $ Msg.AccountNotVerified
 
 getPasswordR :: YesodAuthEmail master => AuthHandler master Value
