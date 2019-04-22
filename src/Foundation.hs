@@ -199,7 +199,7 @@ instance YesodAuthEmail App where
             Just (Entity uid u) -> return $ Just EmailCreds
                 { emailCredsId = uid
                 , emailCredsAuthId = Just uid
-                , emailCredsStatus = isJust $ userPassword u
+                , emailCredsStatus = userVerified u
                 , emailCredsVerkey = userVerkey u
                 , emailCredsEmail = email
                 }
