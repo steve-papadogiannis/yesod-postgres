@@ -407,11 +407,17 @@ parsePasswordField = withObject "password" (\obj -> do
 
 type Password = Text
 
-data InvalidJSONLoginCreds = MalformedJSON
-                           | MissingEmail
-                           | MissingPassword
-                           | LoginCreds Email Password
-                           deriving Show
+data JSONLoginCredsParseResult = MalformedJSON
+                               | MissingEmail
+                               | MissingPassword
+                               | LoginCreds Email Password
+                               deriving Show
+                               
+data LoginResult = PasswordNotSet
+                 | AccountNotVerified
+                 | LoginFailure
+                 | Just Email
+                 deriving Show
 
 postLoginR :: YesodAuthEmail master => AuthHandler master Value
 postLoginR = do
@@ -455,16 +461,19 @@ postLoginR = do
                    , emailCredsEmail <$> mecreds
                    , emailCredsStatus <$> mecreds
                    ) of
-                (Just aid, Just email', Just True) -> do
+                (Just aid, Just email', True) -> do
                       mrealpass <- getPassword aid
                       case mrealpass of
-                        Nothing -> return Nothing
+                        Nothing -> return PasswordNotSet
                         Just realpass -> do
                             passValid <- verifyPassword pass realpass
                             return $ if passValid
                                     then Just email'
-                                    else Nothing
-                _ -> return Nothing
+                                    else PasswordMismatch
+                (Just aid, Just email', False) -> do
+                      $(logError) Msg.AccountNotVerified
+                      return AccountNotVerified
+                _ -> return LoginFailure
           let isEmail = Text.Email.Validate.isValid $ encodeUtf8 identifier
           case maid of
             Just email' ->
@@ -472,11 +481,18 @@ postLoginR = do
                          (if isEmail then "email" else "username")
                          email'
                          [("verifiedEmail", email')]
-            Nothing ->
+            PasswordNotSet ->
                 loginErrorMessageI $
                                    if isEmail
                                    then Msg.InvalidEmailPass
                                    else Msg.InvalidUsernamePass
+            PasswordMismatch ->
+                loginErrorMessageI $
+                                   if isEmail
+                                   then Msg.InvalidEmailPass
+                                   else Msg.InvalidUsernamePass
+            AccountNotVerified ->
+                loginErrorMessageI $ Msg.AccountNotVerified
 
 getPasswordR :: YesodAuthEmail master => AuthHandler master Value
 getPasswordR = do
