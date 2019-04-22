@@ -413,9 +413,10 @@ data JSONLoginCredsParseResult = MalformedJSON
                                | LoginCreds Email Password
                                deriving Show
                                
-data LoginResult = PasswordNotSet
-                 | AccountNotVerified
-                 | LoginFailure
+data LoginResult = PasswordNotSet Email
+                 | AccountNotVerified Email
+                 | PasswordMismatch Email
+                 | LoginFailure Email
                  | Just Email
                  deriving Show
 
@@ -464,16 +465,16 @@ postLoginR = do
                 (Just aid, Just email', True) -> do
                       mrealpass <- getPassword aid
                       case mrealpass of
-                        Nothing -> return PasswordNotSet
+                        Nothing -> return $ PasswordNotSet email'
                         Just realpass -> do
                             passValid <- verifyPassword pass realpass
                             return $ if passValid
                                     then Just email'
-                                    else PasswordMismatch
+                                    else PasswordMismatch email'
                 (Just aid, Just email', False) -> do
                       $(logError) Msg.AccountNotVerified
-                      return AccountNotVerified
-                _ -> return LoginFailure
+                      return $ AccountNotVerified email'
+                _ -> return LoginFailure email'
           let isEmail = Text.Email.Validate.isValid $ encodeUtf8 identifier
           case maid of
             Just email' ->
@@ -482,7 +483,7 @@ postLoginR = do
                          email'
                          [("verifiedEmail", email')]
             PasswordNotSet ->
-                $(logError) Msg.PasswordNotSet
+                $(logError) Msg.PasswordNotSet 
                 loginErrorMessageI $
                                    if isEmail
                                    then Msg.InvalidEmailPass
