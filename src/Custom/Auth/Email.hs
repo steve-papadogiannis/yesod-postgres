@@ -431,36 +431,36 @@ postLoginR = do
                  Right password -> do
                    return $ LoginCreds email password
   $(logInfo) $ T.pack $ show jsonLoginCredsParseResult
-  mr <- getMessageRender
+  messageRender <- getMessageRender
   case jsonLoginCredsParseResult of
     MalformedJSON -> loginErrorMessageI Msg.MalformedJSONMessage
     MissingEmail -> loginErrorMessageI Msg.MissingEmailMessage
     MissingPassword -> loginErrorMessageI Msg.MissingPasswordMessage
-    LoginCreds identifier pass -> do
-      mecreds <- getEmailCreds identifier
-      maid <-
-        case (mecreds >>= emailCredsAuthId, emailCredsEmail <$> mecreds, emailCredsStatus <$> mecreds) of
+    LoginCreds email password -> do
+      emailCreds <- getEmailCreds email
+      loginResult <-
+        case (emailCreds >>= emailCredsAuthId, emailCredsEmail <$> emailCreds, emailCredsStatus <$> emailCreds) of
           (Just aid, Just email', Just True) -> do
             mrealpass <- getPassword aid
             case mrealpass of
               Nothing -> return $ PasswordNotSet email'
               Just realpass -> do
-                passValid <- verifyPassword pass realpass
+                passValid <- verifyPassword password realpass
                 return $
                   if passValid
                     then LoginValidationSuccess email'
                     else PasswordMismatch email'
           (_, Just email', Just False) -> do
-            $(logError) $ mr $ Msg.AccountNotVerified email'
+            $(logError) $ messageRender $ Msg.AccountNotVerified email'
             return $ AccountNotVerified email'
           (Nothing, Just email', _) -> do
-            $(logError) $ mr $ Msg.LoginFailureEmail email'
+            $(logError) $ messageRender $ Msg.LoginFailureEmail email'
             return $ LoginFailureEmail email'
           _ -> do
-            $(logError) $ mr $ Msg.LoginFailure
+            $(logError) $ messageRender $ Msg.LoginFailure
             return $ LoginFailure
-      let isEmail = Text.Email.Validate.isValid $ encodeUtf8 identifier
-      case maid of
+      let isEmail = Text.Email.Validate.isValid $ encodeUtf8 email
+      case loginResult of
         LoginValidationSuccess email' ->
           setCredsRedirect $
           Creds
@@ -470,25 +470,25 @@ postLoginR = do
             email'
             [("verifiedEmail", email')]
         PasswordNotSet email' -> do
-          $(logError) $ mr $ Msg.PasswordNotSet email'
+          $(logError) $ messageRender $ Msg.PasswordNotSet email'
           loginErrorMessageI $
             if isEmail
               then Msg.InvalidEmailPass
               else Msg.InvalidUsernamePass
         PasswordMismatch email' -> do
-          $(logError) $ mr $ Msg.PasswordMismatch email'
+          $(logError) $ messageRender $ Msg.PasswordMismatch email'
           loginErrorMessageI $
             if isEmail
               then Msg.InvalidEmailPass
               else Msg.InvalidUsernamePass
         AccountNotVerified email' -> do
-          $(logError) $ mr $ Msg.AccountNotVerified email'
+          $(logError) $ messageRender $ Msg.AccountNotVerified email'
           loginErrorMessageI $ Msg.AccountNotVerified email'
         LoginFailureEmail email' -> do
-          $(logError) $ mr $ Msg.LoginFailureEmail email'
+          $(logError) $ messageRender $ Msg.LoginFailureEmail email'
           loginErrorMessageI $ Msg.LoginFailure
         LoginFailure -> do
-          $(logError) $ mr $ Msg.LoginFailure
+          $(logError) $ messageRender $ Msg.LoginFailure
           loginErrorMessageI $ Msg.LoginFailure
 
 --getPasswordR :: YesodAuthEmail master => AuthHandler master Value
