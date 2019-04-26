@@ -283,16 +283,18 @@ registerHelper ::
 registerHelper allowUsername forgotPassword = do
   y <- getYesod
   checkCsrfHeaderOrParam defaultCsrfHeaderName defaultCsrfParamName
-  result <- runInputPostResult $ (,) <$> ireq textField "email" <*> iopt textField "password"
   creds <-
-    case result of
-      FormSuccess (iden, pass) -> return $ Just (iden, pass)
-      _ -> do
+      do
         (creds :: Result Value) <- parseCheckJsonBody
         return $
           case creds of
-            Error _     -> Nothing
-            Success val -> parseMaybe parseRegister val
+            Error errorMessage -> 
+               $(logError) $ T.pack errorMessage
+               return MalformedJSON
+            Success val -> do
+               $(logInfo) $ T.pack $ show val
+               let eitherEmailField = parseEither parseEmailField val
+               $(logInfo) $ T.pack $ show eitherEmailField
   let eidentifier =
         case creds of
           Nothing -> Left Msg.NoIdentifierProvided
