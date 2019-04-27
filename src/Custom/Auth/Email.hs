@@ -266,15 +266,6 @@ authEmail = AuthPlugin "email" dispatch
     dispatch "POST" ["set-password"] = postPasswordR >>= sendResponse
     dispatch _ _ = notFound
 
-parseRegister :: Value -> Parser (Text, Maybe Text)
-parseRegister =
-  withObject
-    "email"
-    (\obj -> do
-       email <- obj .: "email"
-       pass <- obj .:? "password"
-       return (email, pass))
-
 registerHelper ::
      YesodAuthEmail master
   => Bool -- ^ allow usernames?
@@ -283,67 +274,104 @@ registerHelper ::
 registerHelper allowUsername forgotPassword = do
   y <- getYesod
   checkCsrfHeaderOrParam defaultCsrfHeaderName defaultCsrfParamName
-  creds <-
-      do
-        (creds :: Result Value) <- parseCheckJsonBody
-        return $
-          case creds of
-            Error errorMessage -> 
-               $(logError) $ T.pack errorMessage
-               return MalformedJSON
-            Success val -> do
-               $(logInfo) $ T.pack $ show val
-               let eitherEmailField = parseEither parseEmailField val
-               $(logInfo) $ T.pack $ show eitherEmailField
-  let eidentifier =
-        case creds of
-          Nothing -> Left Msg.NoIdentifierProvided
-          Just (x, _)
-            | Just x' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 x) ->
-              Right $ normalizeEmailAddress y $ decodeUtf8With lenientDecode x'
-            | allowUsername -> Right $ TS.strip x
-            | otherwise -> Left Msg.InvalidEmailAddress
+  jsonRegisterForgotPasswordCredsParseResult <-
+    do (creds :: Result Value) <- parseCheckJsonBody
+       case creds of
+         Error errorMessage -> do
+           $(logError) $ T.pack errorMessage
+           return MalformedJSON
+         Success val -> do
+           $(logInfo) $ T.pack $ show val
+           let eitherEmailField = parseEither parseEmailField val
+           $(logInfo) $ T.pack $ show eitherEmailField
+           case eitherEmailField of
+             Left missingEmailError -> do
+               $(logError) $ T.pack $ show missingEmailError
+               return MissingEmail
+             Right email -> do
+               $(logInfo) $ T.pack $ show email
+               if forgotPassword
+                 then do
+                   return $ ForgotPasswordCreds email
+                 else do
+                   let eitherPasswordField = parseEither parsePasswordField val
+                   $(logInfo) $ T.pack $ show eitherPasswordField
+                   case eitherPasswordField of
+                     Left missingPasswordError -> do
+                       $(logError) $ T.pack $ show missingPasswordError
+                       return MissingPassword
+                     Right password -> do
+                       return $ LoginRegisterCreds email password
+  $(logInfo) $ T.pack $ show jsonRegisterForgotPasswordCredsParseResult
+  messageRender <- getMessageRender
+  emailIdentifier <-
+        case jsonRegisterForgotPasswordCredsParseResult of
+          MalformedJSON -> do
+             $(logError) $ messageRender $ Msg.MalformedJSONMessage
+             return $ Left Msg.MalformedJSONMessage
+          MissingEmail -> do
+            $(logError) $ messageRender $ Msg.MissingEmailMessage
+            return $ Left Msg.MissingEmailMessage
+          MissingPassword -> do
+            $(logError) $ messageRender $ Msg.MissingPasswordMessage
+            return $ Left Msg.MissingPasswordMessage
+          LoginRegisterCreds email password
+            | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
+              let loginRegisterCreds =
+                    LoginRegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
+              $(logInfo) $ T.pack $ show loginRegisterCreds
+              return $ Right loginRegisterCreds
+            | otherwise -> do
+              $(logError) $ messageRender $ Msg.InvalidEmailAddress
+              return $ Left Msg.InvalidEmailAddress
+          ForgotPasswordCreds email
+            | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
+              let forgotPasswordCreds =
+                    ForgotPasswordCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email')
+              $(logInfo) $ T.pack $ show forgotPasswordCreds
+              return $ Right forgotPasswordCreds
+            | otherwise -> do
+              $(logError) $ messageRender $ Msg.InvalidEmailAddress
+              return $ Left Msg.InvalidEmailAddress
   let mpass =
-        case (forgotPassword, creds) of
-          (False, Just (_, mp)) -> mp
-          _                     -> Nothing
-  case eidentifier of
-    Left route -> loginErrorMessageI route
-    Right identifier -> do
-      mecreds <- getEmailCreds identifier
+        case (forgotPassword, jsonRegisterForgotPasswordCredsParseResult) of
+          (False, LoginRegisterCreds _ password) -> Just password
+          _                                      -> Nothing
+  case emailIdentifier of
+    Left message -> loginErrorMessageI message
+    Right (LoginRegisterCreds email _) -> do
+      mecreds <- getEmailCreds email
       registerCreds <-
         case mecreds of
-          Just (EmailCreds lid _ verStatus (Just key) email) -> return $ Just (lid, verStatus, key, email)
-          Just (EmailCreds lid _ verStatus Nothing email) -> do
+          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
+          Just (EmailCreds lid _ verStatus Nothing email') -> do
             key <- liftIO $ randomKey y
             setVerifyKey lid key
-            return $ Just (lid, verStatus, key, email)
-          Nothing
-            | allowUsername -> return Nothing
-            | otherwise -> do
+            return $ Just (lid, verStatus, key, email')
+          Nothing -> do
               key <- liftIO $ randomKey y
               lid <-
                 case mpass of
                   Just pass -> do
                     salted <- hashAndSaltPassword pass
-                    addUnverifiedWithPass identifier key salted
-                  _ -> addUnverified identifier key
-              return $ Just (lid, False, key, identifier)
+                    addUnverifiedWithPass email key salted
+                  _ -> addUnverified email key
+              return $ Just (lid, False, key, email)
       case registerCreds of
-        Nothing -> loginErrorMessageI (Msg.IdentifierNotFound identifier)
+        Nothing -> loginErrorMessageI (Msg.IdentifierNotFound email)
         Just creds1@(_, False, _, _) -> sendConfirmationEmail creds1
         Just creds1@(_, True, _, _) ->
           if forgotPassword
             then sendConfirmationEmail creds1
-            else case emailPreviouslyRegisteredResponse identifier of
+            else case emailPreviouslyRegisteredResponse email of
                    Just response -> response
                    Nothing       -> sendConfirmationEmail creds1
-      where sendConfirmationEmail (lid, _, verKey, email) = do
+      where sendConfirmationEmail (lid, _, verKey, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
               let verUrl = render $ tp $ verifyR (toPathPiece lid) verKey
-              sendVerifyEmail email verKey verUrl
-              confirmationEmailSentResponse identifier
+              sendVerifyEmail email' verKey verUrl
+              confirmationEmailSentResponse email'
 
 postRegisterR :: YesodAuthEmail master => AuthHandler master Value
 postRegisterR = registerHelper False False
@@ -393,8 +421,9 @@ data JSONLoginCredsParseResult
   = MalformedJSON
   | MissingEmail
   | MissingPassword
-  | LoginCreds Email
-               Password
+  | LoginRegisterCreds Email
+                       Password
+  | ForgotPasswordCreds Email
   deriving (Show)
 
 data LoginResult
@@ -431,14 +460,14 @@ postLoginR = do
                    $(logError) $ T.pack $ show missingPasswordError
                    return MissingPassword
                  Right password -> do
-                   return $ LoginCreds email password
+                   return $ LoginRegisterCreds email password
   $(logInfo) $ T.pack $ show jsonLoginCredsParseResult
   messageRender <- getMessageRender
   case jsonLoginCredsParseResult of
     MalformedJSON -> loginErrorMessageI Msg.MalformedJSONMessage
     MissingEmail -> loginErrorMessageI Msg.MissingEmailMessage
     MissingPassword -> loginErrorMessageI Msg.MissingPasswordMessage
-    LoginCreds email password -> do
+    LoginRegisterCreds email password -> do
       emailCreds <- getEmailCreds email
       loginResult <-
         case (emailCreds >>= emailCredsAuthId, emailCredsEmail <$> emailCreds, emailCredsStatus <$> emailCreds) of
