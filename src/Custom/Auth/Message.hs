@@ -60,6 +60,7 @@ data AuthMessage =
     | PasswordMismatch Text
     | LoginFailureEmail Text
     | LoginFailure
+    | AlreadyRegistered
 {-# DEPRECATED Logout "Please, use LogoutTitle instead." #-}
 
 -- | Defaults to 'englishMessage'.
@@ -120,3 +121,4 @@ englishMessage (PasswordNotSet email)        = "Password is not set for user " `
 englishMessage (PasswordMismatch email)      = "Password given mismatches with password stored in DB for user " `mappend` email
 englishMessage (LoginFailureEmail email)     = "Login for user " `mappend` email `mappend` " failed"
 englishMessage LoginFailure                  = "Login for user failed"
+englishMessage AlreadyRegistered             = "This email is already registered"

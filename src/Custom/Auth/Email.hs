@@ -244,7 +244,7 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
     --
     -- @since 1.6.4
   emailPreviouslyRegisteredResponse :: MonadAuthHandler site m => Text -> Maybe (m Value)
-  emailPreviouslyRegisteredResponse _ = Nothing
+  emailPreviouslyRegisteredResponse _ = Just $ loginErrorMessageI Msg.AlreadyRegistered
     -- | Additional normalization of email addresses, besides standard canonicalization.
     --
     -- Default: Lower case the email address.
@@ -268,10 +268,9 @@ authEmail = AuthPlugin "email" dispatch
 
 registerHelper ::
      YesodAuthEmail master
-  => Bool -- ^ allow usernames?
-  -> Bool -- ^ forgot password?
+  => Bool -- ^ forgot password?
   -> AuthHandler master Value
-registerHelper allowUsername forgotPassword = do
+registerHelper forgotPassword = do
   y <- getYesod
   checkCsrfHeaderOrParam defaultCsrfHeaderName defaultCsrfParamName
   jsonRegisterForgotPasswordCredsParseResult <-
@@ -305,34 +304,33 @@ registerHelper allowUsername forgotPassword = do
   $(logInfo) $ T.pack $ show jsonRegisterForgotPasswordCredsParseResult
   messageRender <- getMessageRender
   emailIdentifier <-
-        case jsonRegisterForgotPasswordCredsParseResult of
-          MalformedJSON -> do
-             $(logError) $ messageRender $ Msg.MalformedJSONMessage
-             return $ Left Msg.MalformedJSONMessage
-          MissingEmail -> do
-            $(logError) $ messageRender $ Msg.MissingEmailMessage
-            return $ Left Msg.MissingEmailMessage
-          MissingPassword -> do
-            $(logError) $ messageRender $ Msg.MissingPasswordMessage
-            return $ Left Msg.MissingPasswordMessage
-          LoginRegisterCreds email password
-            | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
-              let loginRegisterCreds =
-                    LoginRegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
-              $(logInfo) $ T.pack $ show loginRegisterCreds
-              return $ Right loginRegisterCreds
-            | otherwise -> do
-              $(logError) $ messageRender $ Msg.InvalidEmailAddress
-              return $ Left Msg.InvalidEmailAddress
-          ForgotPasswordCreds email
-            | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
-              let forgotPasswordCreds =
-                    ForgotPasswordCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email')
-              $(logInfo) $ T.pack $ show forgotPasswordCreds
-              return $ Right forgotPasswordCreds
-            | otherwise -> do
-              $(logError) $ messageRender $ Msg.InvalidEmailAddress
-              return $ Left Msg.InvalidEmailAddress
+    case jsonRegisterForgotPasswordCredsParseResult of
+      MalformedJSON -> do
+        $(logError) $ messageRender $ Msg.MalformedJSONMessage
+        return $ Left Msg.MalformedJSONMessage
+      MissingEmail -> do
+        $(logError) $ messageRender $ Msg.MissingEmailMessage
+        return $ Left Msg.MissingEmailMessage
+      MissingPassword -> do
+        $(logError) $ messageRender $ Msg.MissingPasswordMessage
+        return $ Left Msg.MissingPasswordMessage
+      LoginRegisterCreds email password
+        | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
+          let loginRegisterCreds =
+                LoginRegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
+          $(logInfo) $ T.pack $ show loginRegisterCreds
+          return $ Right loginRegisterCreds
+        | otherwise -> do
+          $(logError) $ messageRender $ Msg.InvalidEmailAddress
+          return $ Left Msg.InvalidEmailAddress
+      ForgotPasswordCreds email
+        | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
+          let forgotPasswordCreds = ForgotPasswordCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email')
+          $(logInfo) $ T.pack $ show forgotPasswordCreds
+          return $ Right forgotPasswordCreds
+        | otherwise -> do
+          $(logError) $ messageRender $ Msg.InvalidEmailAddress
+          return $ Left Msg.InvalidEmailAddress
   let mpass =
         case (forgotPassword, jsonRegisterForgotPasswordCredsParseResult) of
           (False, LoginRegisterCreds _ password) -> Just password
@@ -349,14 +347,14 @@ registerHelper allowUsername forgotPassword = do
             setVerifyKey lid key
             return $ Just (lid, verStatus, key, email')
           Nothing -> do
-              key <- liftIO $ randomKey y
-              lid <-
-                case mpass of
-                  Just pass -> do
-                    salted <- hashAndSaltPassword pass
-                    addUnverifiedWithPass email key salted
-                  _ -> addUnverified email key
-              return $ Just (lid, False, key, email)
+            key <- liftIO $ randomKey y
+            lid <-
+              case mpass of
+                Just pass -> do
+                  salted <- hashAndSaltPassword pass
+                  addUnverifiedWithPass email key salted
+                _ -> addUnverified email key
+            return $ Just (lid, False, key, email)
       case registerCreds of
         Nothing -> loginErrorMessageI (Msg.IdentifierNotFound email)
         Just creds1@(_, False, _, _) -> sendConfirmationEmail creds1
@@ -374,10 +372,10 @@ registerHelper allowUsername forgotPassword = do
               confirmationEmailSentResponse email'
 
 postRegisterR :: YesodAuthEmail master => AuthHandler master Value
-postRegisterR = registerHelper False False
+postRegisterR = registerHelper False
 
 postForgotPasswordR :: YesodAuthEmail master => AuthHandler master Value
-postForgotPasswordR = registerHelper True True
+postForgotPasswordR = registerHelper True
 
 getVerifyR :: YesodAuthEmail site => AuthEmailId site -> Text -> AuthHandler site Value
 getVerifyR lid key = do
@@ -467,60 +465,64 @@ postLoginR = do
     MalformedJSON -> loginErrorMessageI Msg.MalformedJSONMessage
     MissingEmail -> loginErrorMessageI Msg.MissingEmailMessage
     MissingPassword -> loginErrorMessageI Msg.MissingPasswordMessage
-    LoginRegisterCreds email password -> do
-      emailCreds <- getEmailCreds email
-      loginResult <-
-        case (emailCreds >>= emailCredsAuthId, emailCredsEmail <$> emailCreds, emailCredsStatus <$> emailCreds) of
-          (Just aid, Just email', Just True) -> do
-            mrealpass <- getPassword aid
-            case mrealpass of
-              Nothing -> return $ PasswordNotSet email'
-              Just realpass -> do
-                passValid <- verifyPassword password realpass
-                return $
-                  if passValid
-                    then LoginValidationSuccess email'
-                    else PasswordMismatch email'
-          (_, Just email', Just False) -> do
-            $(logError) $ messageRender $ Msg.AccountNotVerified email'
-            return $ AccountNotVerified email'
-          (Nothing, Just email', _) -> do
-            $(logError) $ messageRender $ Msg.LoginFailureEmail email'
-            return $ LoginFailureEmail email'
-          _ -> do
+    LoginRegisterCreds email password
+      | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
+        emailCreds <- getEmailCreds $ decodeUtf8With lenientDecode email'
+        loginResult <-
+          case (emailCreds >>= emailCredsAuthId, emailCredsEmail <$> emailCreds, emailCredsStatus <$> emailCreds) of
+            (Just aid, Just email'', Just True) -> do
+              mrealpass <- getPassword aid
+              case mrealpass of
+                Nothing -> return $ PasswordNotSet email''
+                Just realpass -> do
+                  passValid <- verifyPassword password realpass
+                  return $
+                    if passValid
+                      then LoginValidationSuccess email''
+                      else PasswordMismatch email''
+            (_, Just email'', Just False) -> do
+              $(logError) $ messageRender $ Msg.AccountNotVerified email''
+              return $ AccountNotVerified email''
+            (Nothing, Just email'', _) -> do
+              $(logError) $ messageRender $ Msg.LoginFailureEmail email''
+              return $ LoginFailureEmail email''
+            _ -> do
+              $(logError) $ messageRender $ Msg.LoginFailure
+              return $ LoginFailure
+        let isEmail = Text.Email.Validate.isValid $ encodeUtf8 email
+        case loginResult of
+          LoginValidationSuccess email'' ->
+            setCredsRedirect $
+            Creds
+              (if isEmail
+                 then "email"
+                 else "username")
+              email''
+              [("verifiedEmail", email'')]
+          PasswordNotSet email'' -> do
+            $(logError) $ messageRender $ Msg.PasswordNotSet email''
+            loginErrorMessageI $
+              if isEmail
+                then Msg.InvalidEmailPass
+                else Msg.InvalidUsernamePass
+          PasswordMismatch email'' -> do
+            $(logError) $ messageRender $ Msg.PasswordMismatch email''
+            loginErrorMessageI $
+              if isEmail
+                then Msg.InvalidEmailPass
+                else Msg.InvalidUsernamePass
+          AccountNotVerified email'' -> do
+            $(logError) $ messageRender $ Msg.AccountNotVerified email''
+            loginErrorMessageI $ Msg.AccountNotVerified email''
+          LoginFailureEmail email'' -> do
+            $(logError) $ messageRender $ Msg.LoginFailureEmail email''
+            loginErrorMessageI $ Msg.LoginFailure
+          LoginFailure -> do
             $(logError) $ messageRender $ Msg.LoginFailure
-            return $ LoginFailure
-      let isEmail = Text.Email.Validate.isValid $ encodeUtf8 email
-      case loginResult of
-        LoginValidationSuccess email' ->
-          setCredsRedirect $
-          Creds
-            (if isEmail
-               then "email"
-               else "username")
-            email'
-            [("verifiedEmail", email')]
-        PasswordNotSet email' -> do
-          $(logError) $ messageRender $ Msg.PasswordNotSet email'
-          loginErrorMessageI $
-            if isEmail
-              then Msg.InvalidEmailPass
-              else Msg.InvalidUsernamePass
-        PasswordMismatch email' -> do
-          $(logError) $ messageRender $ Msg.PasswordMismatch email'
-          loginErrorMessageI $
-            if isEmail
-              then Msg.InvalidEmailPass
-              else Msg.InvalidUsernamePass
-        AccountNotVerified email' -> do
-          $(logError) $ messageRender $ Msg.AccountNotVerified email'
-          loginErrorMessageI $ Msg.AccountNotVerified email'
-        LoginFailureEmail email' -> do
-          $(logError) $ messageRender $ Msg.LoginFailureEmail email'
-          loginErrorMessageI $ Msg.LoginFailure
-        LoginFailure -> do
-          $(logError) $ messageRender $ Msg.LoginFailure
-          loginErrorMessageI $ Msg.LoginFailure
+            loginErrorMessageI $ Msg.LoginFailure
+      | otherwise -> do
+        $(logError) $ messageRender $ Msg.InvalidEmailAddress
+        loginErrorMessageI $ Msg.InvalidEmailAddress
 
 --getPasswordR :: YesodAuthEmail master => AuthHandler master Value
 --getPasswordR = do
