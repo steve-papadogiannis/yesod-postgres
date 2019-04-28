@@ -15,14 +15,14 @@
 
 module Foundation where
 
-import           Import.NoFoundation           hiding (unpack, putStrLn)
+import           Import.NoFoundation           hiding (unpack, putStrLn, pack)
 import           Database.Persist.Sql          (ConnectionPool, runSqlPool)
 import           Control.Monad.Logger          (LogSource)
 import           Network.Mail.Mime
 import qualified Data.Text.Lazy.Encoding
 import           Text.Shakespeare.Text         (stext)
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
-import           Data.Text                     (Text, unpack)
+import           Data.Text                     (Text, unpack, pack)
 import           Control.Monad                 (join)
 import           Prelude                       (putStrLn)
 import           Custom.Auth.Email
@@ -135,8 +135,8 @@ instance YesodAuthEmail App where
     addUnverifiedWithPass email verkey salted =
       liftHandler $ runDB $ insert $ User email (Just salted) (Just verkey) False
 
-    sendVerifyEmail email _ verurl = do
-        liftIO $ putStrLn $ "Copy/ Paste this URL in your browser:" ++ unpack verurl
+    sendVerifyEmail email _ verificationUrl = do
+        $(logInfo) $ pack $ "Copy/ Paste this URL in your browser:" ++ unpack verificationUrl
 
         -- Send email.
         liftIO $ renderSendMail (emptyMail $ Address Nothing "noreply")
@@ -155,7 +155,7 @@ instance YesodAuthEmail App where
                 [stext|
                     Please confirm your email address by clicking on the link below.
 
-                    #{verurl}
+                    #{verificationUrl}
 
                     Thank you
                 |]
@@ -169,11 +169,53 @@ instance YesodAuthEmail App where
                 [shamlet|
                     <p>Please confirm your email address by clicking on the link below.
                     <p>
-                        <a href=#{verurl}>#{verurl}
+                        <a href=#{verificationUrl}>#{verificationUrl}
+
                     <p>Thank you
                 |]
             , partHeaders = []
             }
+
+    sendResetPasswordEmail email _ resetPasswordUrl = do
+        $(logInfo) $ pack $ "Copy/ Paste this URL in your browser:" ++ unpack resetPasswordUrl
+
+        -- Send email.
+        liftIO $ renderSendMail (emptyMail $ Address Nothing "noreply")
+            { mailTo = [Address Nothing email]
+            , mailHeaders =
+                [ ("Subject", "Reset your password")
+                ]
+            , mailParts = [[textPart, htmlPart1]]
+            }
+      where
+        textPart = Part
+            { partType = "text/plain; charset=utf-8"
+            , partEncoding = None
+            , partFilename = Nothing
+            , partContent = Data.Text.Lazy.Encoding.encodeUtf8
+                [stext|
+                    Please follow the link below to reset your password.
+
+                    #{resetPasswordUrl}
+
+                    Thank you
+                |]
+            , partHeaders = []
+            }
+        htmlPart1 = Part
+            { partType = "text/html; charset=utf-8"
+            , partEncoding = None
+            , partFilename = Nothing
+            , partContent = renderHtml
+                [shamlet|
+                    <p>Please confirm your email address by clicking on the link below.
+                    <p>
+                        <a href=#{resetPasswordUrl}>#{resetPasswordUrl}
+                    <p>Thank you
+                |]
+            , partHeaders = []
+            }
+
 
     getVerifyKey = liftHandler . runDB . fmap (join . fmap userVerkey) . get
 

@@ -132,13 +132,15 @@ import qualified Yesod.Auth.Util.PasswordStore as PS
 import           Yesod.Core
 import           Yesod.Form
 
-verifyURLHasSetPassText :: Text
-verifyURLHasSetPassText = "has-set-pass"
-
 verifyR :: Text -> Text -> AuthRoute
 verifyR eid verkey = PluginR "email" path
   where
-    path = "verify" : eid : verkey : [verifyURLHasSetPassText]
+    path = "verify" : eid : [verkey]
+
+setPasswordR :: Text -> Text -> AuthRoute
+setPasswordR encryptedUserId verificationKey = PluginR "email" path
+  where
+    path = "set-password" : encryptedUserId : [verificationKey]
 
 type Email = Text
 
@@ -168,6 +170,7 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   addUnverifiedWithPass :: Email -> VerKey -> SaltedPass -> AuthHandler site (AuthEmailId site)
   addUnverifiedWithPass email verkey _ = addUnverified email verkey
   sendVerifyEmail :: Email -> VerKey -> VerUrl -> AuthHandler site ()
+  sendResetPasswordEmail :: Email -> VerKey -> VerUrl -> AuthHandler site ()
   getVerifyKey :: AuthEmailId site -> AuthHandler site (Maybe VerKey)
   setVerifyKey :: AuthEmailId site -> VerKey -> AuthHandler site ()
   hashAndSaltPassword :: Text -> AuthHandler site SaltedPass
@@ -238,13 +241,13 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
     provideJsonMessage (mr msg)
     where
       msg = Msg.ConfirmationEmailSent identifier
-    -- | If a response is set, it will be used when an already-verified email
-    -- tries to re-register. Otherwise, `confirmationEmailSentResponse` will be
-    -- used.
-    --
-    -- @since 1.6.4
-  emailPreviouslyRegisteredResponse :: MonadAuthHandler site m => Text -> Maybe (m Value)
-  emailPreviouslyRegisteredResponse _ = Just $ loginErrorMessageI Msg.AlreadyRegistered
+  -- | Response after sending a confirmation email.
+  resetPasswordEmailSentResponse :: Text -> AuthHandler site Value
+  resetPasswordEmailSentResponse identifier = do
+    mr <- getMessageRender
+    provideJsonMessage (mr msg)
+    where
+      msg = Msg.ResetPasswordEmailSent identifier
     -- | Additional normalization of email addresses, besides standard canonicalization.
     --
     -- Default: Lower case the email address.
@@ -258,12 +261,15 @@ authEmail = AuthPlugin "email" dispatch
   where
     dispatch "POST" ["register"] = postRegisterR >>= sendResponse
     dispatch "POST" ["forgot-password"] = postForgotPasswordR >>= sendResponse
-    dispatch "GET" ["verify", eid, verkey] =
-      case fromPathPiece eid of
-        Nothing   -> notFound
-        Just eid' -> getVerifyR eid' verkey >>= sendResponse
+    dispatch "GET" ["verify", userId, verificationKey] =
+      case fromPathPiece userId of
+        Nothing      -> notFound
+        Just userId' -> getVerifyR userId' verificationKey >>= sendResponse
     dispatch "POST" ["login"] = postLoginR >>= sendResponse
-    dispatch "POST" ["set-password"] = postPasswordR >>= sendResponse
+    dispatch "POST" ["set-password", userId, verificationKey] =
+      case fromPathPiece userId of
+        Nothing -> notFound
+        Just userId' -> postPasswordR userId' verificationKey >>= sendResponse
     dispatch _ _ = notFound
 
 registerHelper ::
@@ -271,8 +277,7 @@ registerHelper ::
   => Bool -- ^ forgot password?
   -> AuthHandler master Value
 registerHelper forgotPassword = do
-  y <- getYesod
-  checkCsrfHeaderOrParam defaultCsrfHeaderName defaultCsrfParamName
+  checkCsrfHeaderOrParam defaultCsrfHeaderName defaultCsrfParamName -- Check if csrf token is added in request
   jsonRegisterForgotPasswordCredsParseResult <-
     do (creds :: Result Value) <- parseCheckJsonBody
        case creds of
@@ -303,25 +308,28 @@ registerHelper forgotPassword = do
                        return $ LoginRegisterCreds email password
   $(logInfo) $ T.pack $ show jsonRegisterForgotPasswordCredsParseResult
   messageRender <- getMessageRender
+  y <- getYesod -- It is used to produce randomKey
   emailIdentifier <-
     case jsonRegisterForgotPasswordCredsParseResult of
       MalformedJSON -> do
-        $(logError) $ messageRender $ Msg.MalformedJSONMessage
+        $(logError) $ messageRender Msg.MalformedJSONMessage
         return $ Left Msg.MalformedJSONMessage
       MissingEmail -> do
-        $(logError) $ messageRender $ Msg.MissingEmailMessage
+        $(logError) $ messageRender Msg.MissingEmailMessage
         return $ Left Msg.MissingEmailMessage
       MissingPassword -> do
-        $(logError) $ messageRender $ Msg.MissingPasswordMessage
+        $(logError) $ messageRender Msg.MissingPasswordMessage
         return $ Left Msg.MissingPasswordMessage
       LoginRegisterCreds email password
-        | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
+        | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -- canonicalize email
+         -> do
           let loginRegisterCreds =
                 LoginRegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
           $(logInfo) $ T.pack $ show loginRegisterCreds
           return $ Right loginRegisterCreds
-        | otherwise -> do
-          $(logError) $ messageRender $ Msg.InvalidEmailAddress
+        | otherwise -- or return error message that the value entered as email is not one
+         -> do
+          $(logError) $ messageRender Msg.InvalidEmailAddress
           return $ Left Msg.InvalidEmailAddress
       ForgotPasswordCreds email
         | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
@@ -329,47 +337,52 @@ registerHelper forgotPassword = do
           $(logInfo) $ T.pack $ show forgotPasswordCreds
           return $ Right forgotPasswordCreds
         | otherwise -> do
-          $(logError) $ messageRender $ Msg.InvalidEmailAddress
+          $(logError) $ messageRender Msg.InvalidEmailAddress
           return $ Left Msg.InvalidEmailAddress
-  let mpass =
-        case (forgotPassword, jsonRegisterForgotPasswordCredsParseResult) of
-          (False, LoginRegisterCreds _ password) -> Just password
-          _                                      -> Nothing
   case emailIdentifier of
     Left message -> loginErrorMessageI message
-    Right (LoginRegisterCreds email _) -> do
+    Right (LoginRegisterCreds email password) -> do
       mecreds <- getEmailCreds email
       registerCreds <-
         case mecreds of
           Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
-          Just (EmailCreds lid _ verStatus Nothing email') -> do
-            key <- liftIO $ randomKey y
-            setVerifyKey lid key
-            return $ Just (lid, verStatus, key, email')
-          Nothing -> do
+          Nothing -- The user has not been registered yet
+           -> do
             key <- liftIO $ randomKey y
             lid <-
-              case mpass of
-                Just pass -> do
-                  salted <- hashAndSaltPassword pass
-                  addUnverifiedWithPass email key salted
-                _ -> addUnverified email key
+              do salted <- hashAndSaltPassword password
+                 addUnverifiedWithPass email key salted
             return $ Just (lid, False, key, email)
+          _ -> do
+            $(logError) $ messageRender $ Msg.UserRowNotInValidState email
+            return Nothing
       case registerCreds of
-        Nothing -> loginErrorMessageI (Msg.IdentifierNotFound email)
         Just creds1@(_, False, _, _) -> sendConfirmationEmail creds1
-        Just creds1@(_, True, _, _) ->
-          if forgotPassword
-            then sendConfirmationEmail creds1
-            else case emailPreviouslyRegisteredResponse email of
-                   Just response -> response
-                   Nothing       -> sendConfirmationEmail creds1
+        Just creds1@(_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
+        _ -> loginErrorMessageI Msg.RegistrationFailure
       where sendConfirmationEmail (lid, _, verKey, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
               let verUrl = render $ tp $ verifyR (toPathPiece lid) verKey
               sendVerifyEmail email' verKey verUrl
               confirmationEmailSentResponse email'
+    Right (ForgotPasswordCreds email) -> do
+      mecreds <- getEmailCreds email
+      registerCreds <-
+        case mecreds of
+          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
+          _ -> do
+            $(logError) $ messageRender $ Msg.UserRowNotInValidState email
+            return Nothing
+      case registerCreds of
+        Nothing     -> loginErrorMessageI Msg.ForgotPasswordFailure
+        Just creds1 -> sendResetPasswordEmailHandler creds1
+      where sendResetPasswordEmailHandler (lid, _, verKey, email') = do
+              render <- getUrlRender
+              tp <- getRouteToParent
+              let verUrl = render $ tp $ setPasswordR (toPathPiece lid) verKey
+              sendResetPasswordEmail email' verKey verUrl
+              resetPasswordEmailSentResponse email'
 
 postRegisterR :: YesodAuthEmail master => AuthHandler master Value
 postRegisterR = registerHelper False
@@ -378,13 +391,13 @@ postForgotPasswordR :: YesodAuthEmail master => AuthHandler master Value
 postForgotPasswordR = registerHelper True
 
 getVerifyR :: YesodAuthEmail site => AuthEmailId site -> Text -> AuthHandler site Value
-getVerifyR lid key = do
-  realKey <- getVerifyKey lid
-  memail <- getEmail lid
+getVerifyR userId verificationKey = do
+  realKey <- getVerifyKey userId
+  memail <- getEmail userId
   mr <- getMessageRender
-  case (realKey == Just key, memail) of
+  case (realKey == Just verificationKey, memail) of
     (True, Just email) -> do
-      muid <- verifyAccount lid
+      muid <- verifyAccount userId
       case muid of
         Nothing -> invalidKey mr
         Just uid -> do
@@ -487,8 +500,8 @@ postLoginR = do
               $(logError) $ messageRender $ Msg.LoginFailureEmail email''
               return $ LoginFailureEmail email''
             _ -> do
-              $(logError) $ messageRender $ Msg.LoginFailure
-              return $ LoginFailure
+              $(logError) $ messageRender Msg.LoginFailure
+              return LoginFailure
         let isEmail = Text.Email.Validate.isValid $ encodeUtf8 email
         case loginResult of
           LoginValidationSuccess email'' ->
@@ -516,13 +529,13 @@ postLoginR = do
             loginErrorMessageI $ Msg.AccountNotVerified email''
           LoginFailureEmail email'' -> do
             $(logError) $ messageRender $ Msg.LoginFailureEmail email''
-            loginErrorMessageI $ Msg.LoginFailure
+            loginErrorMessageI Msg.LoginFailure
           LoginFailure -> do
-            $(logError) $ messageRender $ Msg.LoginFailure
-            loginErrorMessageI $ Msg.LoginFailure
+            $(logError) $ messageRender Msg.LoginFailure
+            loginErrorMessageI Msg.LoginFailure
       | otherwise -> do
-        $(logError) $ messageRender $ Msg.InvalidEmailAddress
-        loginErrorMessageI $ Msg.InvalidEmailAddress
+        $(logError) $ messageRender Msg.InvalidEmailAddress
+        loginErrorMessageI Msg.InvalidEmailAddress
 
 --getPasswordR :: YesodAuthEmail master => AuthHandler master Value
 --getPasswordR = do
@@ -542,8 +555,8 @@ parsePassword =
        curr <- obj .:? "current"
        return (email', pass, curr))
 
-postPasswordR :: YesodAuthEmail master => AuthHandler master Value
-postPasswordR = do
+postPasswordR :: YesodAuthEmail site => AuthEmailId site -> Text -> AuthHandler site Value
+postPasswordR userId verificationKey = do
   maid <- maybeAuthId
   (creds :: Result Value) <- parseCheckJsonBody
   let jcreds =
