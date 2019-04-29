@@ -6,6 +6,6 @@ database:
   # something like:
   #
   #   database: "_env:PGDATABASE:yesod-postgres_test"
-  database: yesod-postgres_test
+  database: postgres-test
 
-auth-dummy-login: true
+#auth-dummy-login: true

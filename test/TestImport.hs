@@ -15,9 +15,12 @@ import Model                 as X
 import Test.Hspec            as X
 import Text.Shakespeare.Text (st)
 import Yesod.Default.Config2 (useEnv, loadYamlSettings)
-import Yesod.Auth            as X
+import Custom.Auth           as X
+import Custom.Auth.Routes    as X
 import Yesod.Test            as X
 import Yesod.Core.Unsafe     (fakeHandlerGetLogger)
+import Data.Maybe            (fromJust)
+import Data.Aeson            as X
 
 runDB :: SqlPersistM a -> YesodExample App a
 runDB query = do
@@ -71,22 +74,33 @@ getTables = do
 -- Foundation.hs
 authenticateAs :: Entity User -> YesodExample App ()
 authenticateAs (Entity _ u) = do
+    let email = userEmail u
+        body = object [ "email" .= email,
+                        "password" .= ("kurwa" :: Text)]
+        encoded = encode body
+
     request $ do
         setMethod "POST"
-        addPostParam "ident" $ userIdent u
-        setUrl $ AuthR $ PluginR "dummy" []
+        setUrl $ AuthR $ PluginR "email" ["login"]
+        setRequestBody encoded
+        addRequestHeader ("Content-Type", "application/json")
+
+
 
 -- | Create a user.  The dummy email entry helps to confirm that foreign-key
 -- checking is switched off in wipeDB for those database backends which need it.
 createUser :: Text -> YesodExample App (Entity User)
-createUser ident = runDB $ do
-    user <- insertEntity User
-        { userIdent = ident
-        , userPassword = Nothing
-        }
-    _ <- insert Email
-        { emailEmail = ident
-        , emailUserId = Just $ entityKey user
-        , emailVerkey = Nothing
-        }
-    return user
+createUser ident =
+    runDB $ do
+      user <- insertEntity User
+          { userEmail = ident
+          , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
+          , userVerified = True
+          , userVerkey = Just ("a" :: Text)
+          }
+      _ <- insert Email
+          { emailEmail = ident
+          , emailUserId = Just $ entityKey user
+          , emailVerkey = Nothing
+          }
+      return user
