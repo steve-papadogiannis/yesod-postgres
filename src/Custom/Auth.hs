@@ -320,7 +320,9 @@ getCheckR :: AuthHandler master Value
 getCheckR = do
     creds <- maybeAuthId
     setCsrfCookie
-    authLayoutJson (return $ jsonCreds creds)
+    let jsonResponse = jsonCreds creds
+    $(logInfo) $ T.pack $ show $ jsonResponse
+    authLayoutJson (return $ jsonResponse)
   where
     jsonCreds creds =
         Object $ Map.fromList

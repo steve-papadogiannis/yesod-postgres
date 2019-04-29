@@ -5,10 +5,25 @@ module Custom.AuthSpec (spec) where
 
 import TestImport
 import Data.Aeson
+import Data.Aeson.Types              (Parser, Result (..),
+                                      parseEither, parseMaybe,
+                                      withObject, (.:?))
 
 spec :: Spec
 spec = withApp $ do
-    describe "valid request" $ do
-      it "gives a 200" $ do
-          get ("http://localhost:3000/auth/check" :: Text)
-          statusIs 200
+    describe "Get request to CheckR without authenticated user" $
+      it "gives a 200 and the body contains \"logged_in\":false" $ do
+        get ("http://localhost:3000/auth/check" :: Text)
+        statusIs 200
+
+        bodyContains "\"logged_in\":false"
+    describe "Get request to CheckR with authenticated user" $
+      it "gives a 200 and the body contains \"logged_in\":true" $ do
+
+        userEntity <- createUser "steve.papadogiannis@gmail.com"
+        authenticateAs userEntity
+
+        get ("http://localhost:3000/auth/check" :: Text)
+        statusIs 200
+
+        bodyContains "\"logged_in\":true"
