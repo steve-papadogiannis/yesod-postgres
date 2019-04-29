@@ -4,26 +4,26 @@
 module Custom.AuthSpec (spec) where
 
 import TestImport
-import Data.Aeson
-import Data.Aeson.Types              (Parser, Result (..),
-                                      parseEither, parseMaybe,
-                                      withObject, (.:?))
 
 spec :: Spec
 spec = withApp $ do
-    describe "Get request to CheckR without authenticated user" $
-      it "gives a 200 and the body contains \"logged_in\":false" $ do
-        get ("http://localhost:3000/auth/check" :: Text)
-        statusIs 200
+  describe "Get request to CheckR without authenticated user" $
+    it "gives a 200 and the body contains \"logged_in\":false" $ do
+      get ("http://localhost:3000/auth/check" :: Text)
+      statusIs 200
 
-        bodyContains "\"logged_in\":false"
-    describe "Get request to CheckR with authenticated user" $
-      it "gives a 200 and the body contains \"logged_in\":true" $ do
+      bodyContains "\"logged_in\":false"
+  describe "Get request to CheckR with authenticated user" $
+    it "gives a 200 and the body contains \"logged_in\":true" $ do
 
-        userEntity <- createUser "steve.papadogiannis@gmail.com"
-        authenticateAs userEntity
+      userEntity <- createUser "steve.papadogiannis@gmail.com"
+      authenticateAs userEntity
 
-        get ("http://localhost:3000/auth/check" :: Text)
-        statusIs 200
+      get ("http://localhost:3000/auth/check" :: Text)
+      statusIs 200
 
-        bodyContains "\"logged_in\":true"
+      bodyContains "\"logged_in\":true"
+  describe "Post request to CheckR" $
+    it "gives a 405 Method not Allowed" $ do
+      post ("http://localhost:3000/auth/check" :: Text)
+      statusIs 405
