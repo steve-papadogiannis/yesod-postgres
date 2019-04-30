@@ -23,6 +23,12 @@ spec = withApp $ do
       statusIs 200
 
       bodyContains "\"logged_in\":true"
+      
+      cookies <- getRequestCookies
+      let cookie = lookup "X-XSRF-TOKEN" cookies
+      
+      assertEq "X-XSRF-TOKEN cookie must be set" cookie $ Just _
+                        
   describe "Post request to CheckR" $
     it "gives a 405 Method not Allowed" $ do
       post ("http://localhost:3000/auth/check" :: Text)
