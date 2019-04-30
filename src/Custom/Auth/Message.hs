@@ -70,6 +70,9 @@ data AuthMessage
   | MissingConfirmPasswordInternalMessage Text
   | MissingConfirmPasswordMessage
   | PassMismatchInternalMessage Text
+  | InvalidVerificationKeyInternalMessage Text Text Text
+  | InvalidVerificationKey
+  | MissingVerificationKeyInternalMessage Text Text
 
 {-# DEPRECATED
 Logout "Please, use LogoutTitle instead."
@@ -147,3 +150,10 @@ englishMessage (MissingConfirmPasswordInternalMessage userId) =
 englishMessage MissingConfirmPasswordMessage = "No confirmPassword provided"
 englishMessage (PassMismatchInternalMessage userId) =
   "Request body for /reset-password from user with userId " `mappend` userId `mappend` " contains different newPassword and confirmPassword fields"
+englishMessage (InvalidVerificationKeyInternalMessage userId verificationKey storedVerificationKey) =
+  "Invalid verification key. User with userId " `mappend` userId `mappend` " requested /set-password with verification key "
+  `mappend` verificationKey `mappend` " but stored verification key was " `mappend` storedVerificationKey
+englishMessage InvalidVerificationKey = "Invalid verification key"
+englishMessage (MissingVerificationKeyInternalMessage userId verificationKey) =
+  "Invalid verification key. User with userId " `mappend` userId `mappend` " requested /set-password with verification key "
+  `mappend` verificationKey `mappend` " but stored verification key was not set"

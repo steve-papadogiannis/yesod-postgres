@@ -572,7 +572,7 @@ data JSONResetPasswordCredsParseResult
                        Password
   deriving (Show)
 
-postPasswordR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
+postPasswordR :: YesodAuthEmail site => AuthEmailId site -> Text -> AuthHandler site Value
 postPasswordR userId verificationKey = do
   (creds :: Result Value) <- parseCheckJsonBody
   jsonResetPasswordCredsParseResult <-
@@ -615,11 +615,22 @@ postPasswordR userId verificationKey = do
               $(logError) e
               loginErrorMessage e
             Right () -> do
-              salted <- hashAndSaltPassword newPassword
-              $(logInfo) $ T.pack $ "Salted password " ++ T.unpack salted
-              setPassword userId salted
-              deleteSession loginLinkKey
-              loginErrorMessageI Msg.PassUpdated
+              storedVerificationKey <- getVerifyKey userId
+              case (storedVerificationKey, verificationKey) of
+                (Just value, vk)
+                  | value == vk -> do
+                      salted <- hashAndSaltPassword newPassword
+                      $(logInfo) $ T.pack $ "Salted password " ++ T.unpack salted
+                      setPassword userId salted
+                      deleteSession loginLinkKey
+                      loginErrorMessageI Msg.PassUpdated
+                  | otherwise -> do
+                      $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
+                        vk value
+                      loginErrorMessageI Msg.InvalidVerificationKey
+                (Nothing, vk) -> do
+                  $(logError) $ messageRender $ Msg.MissingVerificationKeyInternalMessage (T.pack $ show userId) vk
+                  loginErrorMessageI Msg.InvalidVerificationKey
       | otherwise -> do
           $(logError) $ messageRender $ Msg.PassMismatchInternalMessage $ T.pack $ show userId
           loginErrorMessageI Msg.PassMismatch
