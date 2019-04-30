@@ -24,7 +24,6 @@ import           Text.Shakespeare.Text         (stext)
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import           Data.Text                     (Text, unpack, pack)
 import           Control.Monad                 (join)
-import           Prelude                       (putStrLn)
 import           Custom.Auth.Email
 import           Yesod.Core.Types              (Logger)
 import qualified Yesod.Core.Unsafe             as Unsafe

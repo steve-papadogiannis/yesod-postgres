@@ -107,17 +107,15 @@ module Custom.Auth.Email
   , setLoginLinkKey
   ) where
 
-import           Control.Applicative           ((<$>), (<*>))
+import           Control.Applicative           ((<$>))
 import qualified Crypto.Hash                   as H
 import qualified Crypto.Nonce                  as Nonce
 import           Custom.Auth
 import qualified Custom.Auth.Message           as Msg
 import           Data.Aeson.Types              (Parser, Result (..),
-                                                parseEither, parseMaybe,
-                                                withObject, (.:?))
+                                                parseEither, withObject)
 import           Data.ByteArray                (convert)
 import           Data.ByteString.Base16        as B16
-import           Data.Maybe                    (isJust)
 import           Data.Text                     (Text)
 import qualified Data.Text                     as TS
 import qualified Data.Text                     as T
@@ -130,7 +128,6 @@ import           System.IO.Unsafe              (unsafePerformIO)
 import qualified Text.Email.Validate
 import qualified Yesod.Auth.Util.PasswordStore as PS
 import           Yesod.Core
-import           Yesod.Form
 
 verifyR :: Text -> Text -> AuthRoute
 verifyR eid verkey = PluginR "email" path
