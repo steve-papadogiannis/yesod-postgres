@@ -49,6 +49,7 @@ dependencies:
 - base16-bytestring >= 0.1.1.6
 - email-validate >= 2.3.2.9
 - memory >= 0.14.18
+- HUnit >= 1.6.0.0
 - file-embed
 - safe
 - unordered-containers

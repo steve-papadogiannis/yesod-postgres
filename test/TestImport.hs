@@ -21,6 +21,11 @@ import Yesod.Test            as X
 import Yesod.Core.Unsafe     (fakeHandlerGetLogger)
 import Data.Maybe            (fromJust)
 import Data.Aeson            as X
+import Data.CaseInsensitive (CI)
+import qualified Data.ByteString.Char8 as BS8
+import Network.Wai.Test hiding (assertHeader, assertNoHeader, request)
+import qualified Data.Text as T
+import qualified Test.HUnit as HUnit
 
 runDB :: SqlPersistM a -> YesodExample App a
 runDB query = do
@@ -106,8 +111,8 @@ createUser ident =
       return user
 
 -- | Assert the given header was returned.
-assertHeader :: HasCallStack => CI BS8.ByteString -> YesodExample site ()
-assertHeader header = withResponse $ \ SResponse { simpleHeaders = h } ->
+assertHeaderWithoutValue :: HasCallStack => CI BS8.ByteString -> YesodExample site ()
+assertHeaderWithoutValue header = withResponse $ \ SResponse { simpleHeaders = h } ->
   case lookup header h of
     Nothing -> failure $ T.pack $ concat
         [ "Expected header "
@@ -115,3 +120,7 @@ assertHeader header = withResponse $ \ SResponse { simpleHeaders = h } ->
         , ", but it was not present"
         ]
     Just value -> return ()
+
+-- Yes, just a shortcut
+failure :: (MonadIO a) => T.Text -> a b
+failure reason = (liftIO $ HUnit.assertFailure $ T.unpack reason) >> error ""
