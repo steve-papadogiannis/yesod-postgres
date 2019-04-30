@@ -96,7 +96,7 @@ data Creds master = Creds
     , credsExtra :: [(Text, Text)]
     } deriving (Show)
 
-class (Yesod master, PathPiece (AuthId master), RenderMessage master FormMessage) => YesodAuth master where
+class (Yesod master, PathPiece (AuthId master), RenderMessage master FormMessage, Show (AuthId master)) => YesodAuth master where
     type AuthId master
 
     -- | Perform authentication based on the given credentials.

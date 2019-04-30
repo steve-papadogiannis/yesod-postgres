@@ -162,7 +162,7 @@ data EmailCreds site = EmailCreds
   , emailCredsEmail  :: Email
   }
 
-class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.AuthMessage)) =>
+class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.AuthMessage), Show (AuthEmailId site)) =>
       YesodAuthEmail site
   where
   type AuthEmailId site
@@ -358,7 +358,7 @@ registerHelper forgotPassword = do
             return Nothing
       case registerCreds of
         Just creds1@(_, False, _, _) -> sendConfirmationEmail creds1
-        Just creds1@(_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
+        Just (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
         _ -> loginErrorMessageI Msg.RegistrationFailure
       where sendConfirmationEmail (lid, _, verKey, email') = do
               render <- getUrlRender
@@ -383,6 +383,9 @@ registerHelper forgotPassword = do
               let verUrl = render $ tp $ setPasswordR (toPathPiece lid) verKey
               sendResetPasswordEmail email' verKey verUrl
               resetPasswordEmailSentResponse email'
+    _ -> do
+      $(logError) $ T.pack "Invalid pattern match"
+      loginErrorMessageI Msg.RegistrationFailure
 
 postRegisterR :: YesodAuthEmail master => AuthHandler master Value
 postRegisterR = registerHelper False
@@ -536,6 +539,9 @@ postLoginR = do
       | otherwise -> do
         $(logError) $ messageRender Msg.InvalidEmailAddress
         loginErrorMessageI Msg.InvalidEmailAddress
+    _ -> do
+      $(logError) $ T.pack "Invalid pattern match"
+      loginErrorMessageI Msg.RegistrationFailure
 
 --getPasswordR :: YesodAuthEmail master => AuthHandler master Value
 --getPasswordR = do
@@ -545,79 +551,81 @@ postLoginR = do
 --        Just _ -> do
 --            needOld <- maybe (return True) needOldPassword maid
 --            provideJsonMessage ("Ok" :: Text)
-parsePassword :: Value -> Parser (Text, Text, Maybe Text)
-parsePassword =
+parseNewPasswordField :: Value -> Parser (Text)
+parseNewPasswordField =
   withObject
-    "password"
+    "newPassword"
     (\obj -> do
-       email' <- obj .: "new"
-       pass <- obj .: "confirm"
-       curr <- obj .:? "current"
-       return (email', pass, curr))
+       newPassword <- obj .: "new"
+       return newPassword)
 
-postPasswordR :: YesodAuthEmail site => AuthEmailId site -> Text -> AuthHandler site Value
+parseConfirmPasswordField :: Value -> Parser (Text)
+parseConfirmPasswordField =
+  withObject
+    "confirmPassword"
+    (\obj -> do
+       confirm <- obj .: "confirm"
+       return confirm)
+
+data JSONResetPasswordCredsParseResult
+  = MalformedResetPasswordJSON
+  | MissingNewPassword
+  | MissingConfirmPassword
+  | ResetPasswordCreds Password
+                       Password
+  deriving (Show)
+
+postPasswordR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
 postPasswordR userId verificationKey = do
-  maid <- maybeAuthId
   (creds :: Result Value) <- parseCheckJsonBody
-  let jcreds =
-        case creds of
-          Error _     -> Nothing
-          Success val -> parseMaybe parsePassword val
-  let doJsonParsing = isJust jcreds
-  case maid of
-    Nothing -> loginErrorMessageI Msg.BadSetPass
-    Just aid -> do
-      needOld <- needOldPassword aid
-      if not needOld
-        then confirmPassword aid jcreds
-        else do
-          res <- runInputPostResult $ ireq textField "current"
-          let fcurrent =
-                case res of
-                  FormSuccess currentPass -> Just currentPass
-                  _                       -> Nothing
-          let current =
-                if doJsonParsing
-                  then getThird jcreds
-                  else fcurrent
-          mrealpass <- getPassword aid
-          case (mrealpass, current) of
-            (Nothing, _) -> loginErrorMessage "You do not currently have a password set on your account"
-            (_, Nothing) -> loginErrorMessageI Msg.BadSetPass
-            (Just realpass, Just current') -> do
-              passValid <- verifyPassword current' realpass
-              if passValid
-                then confirmPassword aid jcreds
-                else loginErrorMessage "Invalid current password, please try again"
-  where
-    msgOk = Msg.PassUpdated
-    getThird (Just (_, _, t)) = t
-    getThird Nothing          = Nothing
-    getNewConfirm (Just (a, b, _)) = Just (a, b)
-    getNewConfirm _                = Nothing
-    confirmPassword aid jcreds = do
-      res <- runInputPostResult $ (,) <$> ireq textField "new" <*> ireq textField "confirm"
-      let creds =
-            if isJust jcreds
-              then getNewConfirm jcreds
-              else case res of
-                     FormSuccess res' -> Just res'
-                     _                -> Nothing
-      case creds of
-        Nothing -> loginErrorMessageI Msg.PassMismatch
-        Just (new, confirm) ->
-          if new /= confirm
-            then loginErrorMessageI Msg.PassMismatch
-            else do
-              isSecure <- checkPasswordSecurity aid new
-              case isSecure of
-                Left e -> loginErrorMessage e
-                Right () -> do
-                  salted <- hashAndSaltPassword new
-                  setPassword aid salted
-                  deleteSession loginLinkKey
-                  mr <- getMessageRender
-                  provideJsonMessage (mr msgOk)
+  jsonResetPasswordCredsParseResult <-
+       case creds of
+         Error errorMessage -> do
+           $(logError) $ T.pack errorMessage
+           return MalformedResetPasswordJSON
+         Success val -> do
+           $(logInfo) $ T.pack $ show val
+           let eitherNewPasswordField = parseEither parseNewPasswordField val
+           $(logInfo) $ T.pack $ show eitherNewPasswordField
+           case eitherNewPasswordField of
+             Left missingNewPasswordError -> do
+               $(logError) $ T.pack $ show missingNewPasswordError
+               return MissingNewPassword
+             Right newPassword -> do
+               $(logInfo) $ T.pack $ show newPassword
+               let eitherConfirmPasswordField = parseEither parseConfirmPasswordField val
+               $(logInfo) $ T.pack $ show eitherConfirmPasswordField
+               case eitherConfirmPasswordField of
+                 Left missingConfirmPasswordError -> do
+                   $(logError) $ T.pack $ show missingConfirmPasswordError
+                   return MissingConfirmPassword
+                 Right confirmPassword ->
+                   return $ ResetPasswordCreds newPassword confirmPassword
+  messageRender <- getMessageRender
+  case jsonResetPasswordCredsParseResult of
+    MalformedResetPasswordJSON -> loginErrorMessageI Msg.MalformedJSONMessage
+    MissingNewPassword -> do
+      $(logError) $ messageRender $ Msg.MissingNewPasswordInternalMessage $ T.pack $ show userId
+      loginErrorMessageI Msg.MissingNewPasswordMessage
+    MissingConfirmPassword -> do
+      $(logError) $ messageRender $ Msg.MissingConfirmPasswordInternalMessage $ T.pack $ show userId
+      loginErrorMessageI Msg.MissingConfirmPasswordMessage
+    ResetPasswordCreds newPassword confirmPassword
+      | newPassword == confirmPassword -> do
+          isSecure <- checkPasswordSecurity userId newPassword
+          case isSecure of
+            Left e -> do
+              $(logError) e
+              loginErrorMessage e
+            Right () -> do
+              salted <- hashAndSaltPassword newPassword
+              $(logInfo) $ T.pack $ "Salted password " ++ T.unpack salted
+              setPassword userId salted
+              deleteSession loginLinkKey
+              loginErrorMessageI Msg.PassUpdated
+      | otherwise -> do
+          $(logError) $ messageRender $ Msg.PassMismatchInternalMessage $ T.pack $ show userId
+          loginErrorMessageI Msg.PassMismatch
 
 saltLength :: Int
 saltLength = 5

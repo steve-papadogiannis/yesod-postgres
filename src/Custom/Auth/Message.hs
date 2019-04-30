@@ -65,6 +65,11 @@ data AuthMessage
   | RegistrationFailure
   | ForgotPasswordFailure
   | ResetPasswordEmailSent Text
+  | MissingNewPasswordInternalMessage Text
+  | MissingNewPasswordMessage
+  | MissingConfirmPasswordInternalMessage Text
+  | MissingConfirmPasswordMessage
+  | PassMismatchInternalMessage Text
 
 {-# DEPRECATED
 Logout "Please, use LogoutTitle instead."
@@ -134,3 +139,11 @@ englishMessage RegistrationFailure = "Registration was unsuccessful due to an in
 englishMessage ForgotPasswordFailure = "Forgot Password request was unsuccessful due to an internal error"
 englishMessage (ResetPasswordEmailSent email) =
   "A reset password e-mail has been sent to " `mappend` email `mappend` "."
+englishMessage (MissingNewPasswordInternalMessage userId) =
+  "Request body for /reset-password from user with userId " `mappend` userId `mappend` " did not contain newPassword field"
+englishMessage MissingNewPasswordMessage = "No newPassword provided"
+englishMessage (MissingConfirmPasswordInternalMessage userId) =
+  "Request body for /reset-password from user with userId " `mappend` userId `mappend` " did not contain confirmPassword field"
+englishMessage MissingConfirmPasswordMessage = "No confirmPassword provided"
+englishMessage (PassMismatchInternalMessage userId) =
+  "Request body for /reset-password from user with userId " `mappend` userId `mappend` " contains different newPassword and confirmPassword fields"
