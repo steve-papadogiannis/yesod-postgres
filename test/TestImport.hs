@@ -104,3 +104,14 @@ createUser ident =
           , emailVerkey = Nothing
           }
       return user
+
+-- | Assert the given header was returned.
+assertHeader :: HasCallStack => CI BS8.ByteString -> YesodExample site ()
+assertHeader header = withResponse $ \ SResponse { simpleHeaders = h } ->
+  case lookup header h of
+    Nothing -> failure $ T.pack $ concat
+        [ "Expected header "
+        , show header
+        , ", but it was not present"
+        ]
+    Just value -> return ()
