@@ -168,7 +168,7 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   addUnverifiedWithPass email verkey _ = addUnverified email verkey
   sendVerifyEmail :: Email -> VerKey -> VerUrl -> AuthHandler site ()
   sendResetPasswordEmail :: Email -> VerKey -> VerUrl -> AuthHandler site ()
-  getVerifyKey :: AuthEmailId site -> AuthHandler site (Maybe VerKey)
+  getVerifyKey :: AuthId site -> AuthHandler site (Maybe VerKey)
   setVerifyKey :: AuthEmailId site -> VerKey -> AuthHandler site ()
   hashAndSaltPassword :: Text -> AuthHandler site SaltedPass
   hashAndSaltPassword = liftIO . saltPass
@@ -183,7 +183,7 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
     -- See <https://github.com/yesodweb/yesod/issues/1222>.
     --
     -- @since 1.1.0
-  verifyAccount :: AuthEmailId site -> AuthHandler site (Maybe (AuthId site))
+  verifyAccount :: AuthId site -> AuthHandler site (Maybe (AuthId site))
     -- | Get the salted password for the given account.
     --
     -- @since 1.1.0
@@ -200,7 +200,7 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
     -- | Get the email address for the given email ID.
     --
     -- @since 1.1.0
-  getEmail :: AuthEmailId site -> AuthHandler site (Maybe Email)
+  getEmail :: AuthId site -> AuthHandler site (Maybe Email)
     -- | Generate a random alphanumeric string.
     --
     -- @since 1.1.0
@@ -390,7 +390,7 @@ postRegisterR = registerHelper False
 postForgotPasswordR :: YesodAuthEmail master => AuthHandler master Value
 postForgotPasswordR = registerHelper True
 
-getVerifyR :: YesodAuthEmail site => AuthEmailId site -> Text -> AuthHandler site Value
+getVerifyR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
 getVerifyR userId verificationKey = do
   realKey <- getVerifyKey userId
   memail <- getEmail userId
@@ -572,7 +572,7 @@ data JSONResetPasswordCredsParseResult
                        Password
   deriving (Show)
 
-postPasswordR :: YesodAuthEmail site => AuthEmailId site -> Text -> AuthHandler site Value
+postPasswordR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
 postPasswordR userId verificationKey = do
   (creds :: Result Value) <- parseCheckJsonBody
   jsonResetPasswordCredsParseResult <-
@@ -620,10 +620,11 @@ postPasswordR userId verificationKey = do
                 (Just value, vk)
                   | value == vk -> do
                       salted <- hashAndSaltPassword newPassword
-                      $(logInfo) $ T.pack $ "Salted password " ++ T.unpack salted
+                      $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
                       setPassword userId salted
+                      $(logInfo) $ T.pack "New password updated"
                       deleteSession loginLinkKey
-                      loginErrorMessageI Msg.PassUpdated
+                      messageJson200 $ messageRender Msg.PassUpdated
                   | otherwise -> do
                       $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
                         vk value

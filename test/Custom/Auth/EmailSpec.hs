@@ -5,10 +5,30 @@ module Custom.Auth.EmailSpec (spec) where
 
 import TestImport
 import Data.Aeson
+import           Database.Persist.Sql
+import qualified Data.Text                  as T
 
 spec :: Spec
 spec = withApp $ do
-    describe "valid request" $ do
-      it "gives a 200" $ do
-          get ("http://localhost:3000/auth/check" :: Text)
+    describe "Post request to SetPasswordR" $
+        it "gives a 200 and the body contains \"message\":\"Password updated\"" $ do
+
+          userEntity <- createUser "steve.papadogiannis@gmail.com"
+          let (Entity _id user) = userEntity
+
+          let newPassword = "newPassword" :: Text
+              confirmPassword = "newPassword" :: Text
+              body = object [ "new" .= newPassword, "confirm" .= confirmPassword ]
+              encoded = encode body
+
+          request $ do
+            setMethod "POST"
+            setUrl $ AuthR $ PluginR "email" ["set-password", T.pack . show . unSqlBackendKey . unUserKey $ _id, "a"]
+            setRequestBody encoded
+            addRequestHeader ("Content-Type", "application/json")
+
           statusIs 200
+
+--            [Entity _id user] <- runDB $ selectList [UserVerkey ==. Just "a"] []
+--            assertEq "Should have " comment (Comment message Nothing)
+          bodyContains "\"message\":\"Password updated\""

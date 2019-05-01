@@ -11,6 +11,7 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Custom.Auth
     ( -- * Subsite
       Auth
@@ -44,6 +45,7 @@ module Custom.Auth
     , credsKey
     , provideJsonMessage
     , messageJson401
+    , messageJson200
     , asHtml
     ) where
 
