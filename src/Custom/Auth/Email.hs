@@ -205,7 +205,7 @@ registerHelper forgotPassword = do
        case creds of
          Error errorMessage -> do
            $(logError) $ T.pack errorMessage
-           return MalformedJSON
+           return MalformedRegisterForgotPasswordJSON
          Success val -> do
            $(logInfo) $ T.pack $ show val
            let eitherEmailField = parseEither parseEmailField val
@@ -213,7 +213,7 @@ registerHelper forgotPassword = do
            case eitherEmailField of
              Left missingEmailError -> do
                $(logError) $ T.pack $ show missingEmailError
-               return MissingEmail
+               return MissingRegisterForgotPasswordEmail
              Right email -> do
                $(logInfo) $ T.pack $ show email
                if forgotPassword
@@ -225,24 +225,24 @@ registerHelper forgotPassword = do
                    case eitherPasswordField of
                      Left missingPasswordError -> do
                        $(logError) $ T.pack $ show missingPasswordError
-                       return MissingPassword
+                       return MissingRegisterForgotPasswordPassword
                      Right password -> do
-                       return $ LoginRegisterCreds email password
+                       return $ RegisterCreds email password
   $(logInfo) $ T.pack $ show jsonRegisterForgotPasswordCredsParseResult
   messageRender <- getMessageRender
   y <- getYesod -- It is used to produce randomKey
   emailIdentifier <-
     case jsonRegisterForgotPasswordCredsParseResult of
-      MalformedJSON -> do
+      MalformedRegisterForgotPasswordJSON -> do
         $(logError) $ messageRender Msg.MalformedJSONMessage
         return $ Left Msg.MalformedJSONMessage
-      MissingEmail -> do
+      MissingRegisterForgotPasswordEmail -> do
         $(logError) $ messageRender Msg.MissingEmailMessage
         return $ Left Msg.MissingEmailMessage
-      MissingPassword -> do
+      MissingRegisterForgotPasswordPassword -> do
         $(logError) $ messageRender Msg.MissingPasswordMessage
         return $ Left Msg.MissingPasswordMessage
-      LoginRegisterCreds email password
+      RegisterCreds email password
         | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -- canonicalize email
          -> do
           let loginRegisterCreds =
@@ -263,7 +263,7 @@ registerHelper forgotPassword = do
           return $ Left Msg.InvalidEmailAddress
   case emailIdentifier of
     Left message -> loginErrorMessageI message
-    Right (LoginRegisterCreds email password) -> do
+    Right (RegisterCreds email password) -> do
       mecreds <- getEmailCreds email
       registerCreds <-
         case mecreds of
@@ -354,12 +354,20 @@ parsePasswordField =
 type Password = Text
 
 data JSONLoginCredsParseResult
-  = MalformedJSON
-  | MissingEmail
-  | MissingPassword
-  | LoginRegisterCreds Email
-                       Password
+  = MalformedLoginJSON
+  | MissingLoginEmail
+  | MissingLoginPassword
+  | LoginCreds Email
+               Password
+  deriving (Show)
+
+data JSONRegisterForgotPasswordCredsParseResult
+  = MalformedRegisterForgotPasswordJSON
+  | MissingRegisterForgotPasswordEmail
+  | MissingRegisterForgotPasswordPassword
   | ForgotPasswordCreds Email
+  | RegisterCreds Email
+                  Password
   deriving (Show)
 
 data LoginResult
@@ -378,7 +386,7 @@ postLoginR = do
        case creds of
          Error errorMessage -> do
            $(logError) $ T.pack errorMessage
-           return MalformedJSON
+           return MalformedLoginJSON
          Success val -> do
            $(logInfo) $ T.pack $ show val
            let eitherEmailField = parseEither parseEmailField val
@@ -386,7 +394,7 @@ postLoginR = do
            case eitherEmailField of
              Left missingEmailError -> do
                $(logError) $ T.pack $ show missingEmailError
-               return MissingEmail
+               return MissingLoginEmail
              Right email -> do
                $(logInfo) $ T.pack $ show email
                let eitherPasswordField = parseEither parsePasswordField val
@@ -396,14 +404,14 @@ postLoginR = do
                    $(logError) $ T.pack $ show missingPasswordError
                    return MissingPassword
                  Right password -> do
-                   return $ LoginRegisterCreds email password
+                   return $ LoginCreds email password
   $(logInfo) $ T.pack $ show jsonLoginCredsParseResult
   messageRender <- getMessageRender
   case jsonLoginCredsParseResult of
-    MalformedJSON -> loginErrorMessageI Msg.MalformedJSONMessage
-    MissingEmail -> loginErrorMessageI Msg.MissingEmailMessage
+    MalformedLoginJSON -> loginErrorMessageI Msg.MalformedJSONMessage
+    MissingLoginEmail -> loginErrorMessageI Msg.MissingEmailMessage
     MissingPassword -> loginErrorMessageI Msg.MissingPasswordMessage
-    LoginRegisterCreds email password
+    LoginCreds email password
       | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
         emailCreds <- getEmailCreds $ decodeUtf8With lenientDecode email'
         loginResult <-
@@ -465,14 +473,6 @@ postLoginR = do
       $(logError) $ T.pack "Invalid pattern match"
       loginErrorMessageI Msg.RegistrationFailure
 
---getPasswordR :: YesodAuthEmail master => AuthHandler master Value
---getPasswordR = do
---    maid <- maybeAuthId
---    case maid of
---        Nothing -> loginErrorMessageI Msg.BadSetPass
---        Just _ -> do
---            needOld <- maybe (return True) needOldPassword maid
---            provideJsonMessage ("Ok" :: Text)
 parseNewPasswordField :: Value -> Parser (Text)
 parseNewPasswordField =
   withObject
