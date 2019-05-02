@@ -128,11 +128,11 @@ instance YesodAuth App where
 instance YesodAuthEmail App where
     type AuthEmailId App = UserId
 
-    addUnverified email verkey =
-        liftHandler $ runDB $ insert $ User email Nothing (Just verkey) False
+    addUnverified email verificationToken =
+        liftHandler $ runDB $ insert $ User email Nothing (Just verificationToken) False
 
-    addUnverifiedWithPassword email verkey salted =
-      liftHandler $ runDB $ insert $ User email (Just salted) (Just verkey) False
+    addUnverifiedWithPassword email verificationToken saltedPassword =
+      liftHandler $ runDB $ insert $ User email (Just saltedPassword) (Just verificationToken) False
 
     sendVerifyEmail email _ verificationUrl = do
         $(logInfo) $ pack $ "Copy/ Paste this URL in your browser:" ++ unpack verificationUrl
@@ -216,9 +216,9 @@ instance YesodAuthEmail App where
             }
 
 
-    getVerifyKey = liftHandler . runDB . fmap (join . fmap userVerkey) . get
+    getVerificationToken = liftHandler . runDB . fmap (join . fmap userVerkey) . get
 
-    setVerifyKey uid key = liftHandler $ runDB $ update uid [UserVerkey =. Just key]
+    setVerificationToken userId verificationToken = liftHandler $ runDB $ update userId [UserVerkey =. Just verificationToken]
 
     verifyAccount uid = liftHandler $ runDB $ do
         mu <- get uid

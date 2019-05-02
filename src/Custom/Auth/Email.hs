@@ -94,9 +94,9 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   
   sendResetPasswordEmail :: Email -> VerificationToken -> VerificationUrl -> AuthHandler site ()
   
-  getVerifyKey :: AuthId site -> AuthHandler site (Maybe VerificationToken)
+  getVerificationToken :: AuthId site -> AuthHandler site (Maybe VerificationToken)
   
-  setVerifyKey :: AuthEmailId site -> VerificationToken -> AuthHandler site ()
+  setVerificationToken :: AuthEmailId site -> VerificationToken -> AuthHandler site ()
   
   hashAndSaltPassword :: Text -> AuthHandler site SaltedPassword
   hashAndSaltPassword = liftIO . saltPass
@@ -297,7 +297,7 @@ postForgotPasswordR = registerHelper True
 
 getEmailVerificationR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
 getEmailVerificationR userId verificationToken = do
-  realKey <- getVerifyKey userId
+  realKey <- getVerificationToken userId
   memail <- getEmail userId
   mr <- getMessageRender
   case (realKey == Just verificationToken, memail) of
@@ -515,7 +515,7 @@ postResetPasswordR userId verificationKey = do
               $(logError) e
               loginErrorMessage e
             Right () -> do
-              storedVerificationKey <- getVerifyKey userId
+              storedVerificationKey <- getVerificationToken userId
               case (storedVerificationKey, verificationKey) of
                 (Just value, vk)
                   | value == vk -> do
