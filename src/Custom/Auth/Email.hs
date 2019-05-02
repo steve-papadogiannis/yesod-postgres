@@ -26,43 +26,38 @@ module Custom.Auth.Email
   , SaltedPassword
   , VerificationStatus
   , Identifier
-     -- * Misc
-  , loginLinkKey
-  , setLoginLinkKey
   ) where
 
-import           Control.Applicative           ((<$>))
 import qualified Crypto.Hash                   as H
 import qualified Crypto.Nonce                  as Nonce
-import           Custom.Auth
 import qualified Custom.Auth.Message           as Msg
-import           Data.Aeson.Types              (Parser, Result (..),
-                                                parseEither, withObject)
+import qualified Data.Text                     as TS
+import qualified Data.Text                     as T
+import qualified Data.Text.Encoding            as TE
+import qualified Yesod.Auth.Util.PasswordStore as PS
+import qualified Text.Email.Validate
+import           Control.Applicative           ((<$>))
 import           Data.ByteArray                (convert)
 import           Data.ByteString.Base16        as B16
 import           Data.Text                     (Text)
-import qualified Data.Text                     as TS
-import qualified Data.Text                     as T
 import           Data.Text.Encoding            (decodeUtf8With, encodeUtf8)
-import qualified Data.Text.Encoding            as TE
 import           Data.Text.Encoding.Error      (lenientDecode)
-import           Data.Time                     (addUTCTime, getCurrentTime)
-import           Safe                          (readMay)
 import           System.IO.Unsafe              (unsafePerformIO)
-import qualified Text.Email.Validate
-import qualified Yesod.Auth.Util.PasswordStore as PS
+import           Data.Aeson.Types              (Parser, Result (..), parseEither, withObject)
+import           Custom.Auth
 import           Yesod.Core
 
---| The email verification AuthRoute
+-- | The email verification AuthRoute
 emailVerificationR :: Text -> Text -> AuthRoute
 emailVerificationR userId verificationToken = PluginR "email" path
   where
     path = "verify" : userId : [verificationToken]
 
+-- | The reset password AuthRoute
 resetPasswordR :: Text -> Text -> AuthRoute
 resetPasswordR encryptedUserId verificationToken = PluginR "email" path
   where
-    path = "set-password" : encryptedUserId : [verificationToken]
+    path = "reset-password" : encryptedUserId : [verificationToken]
 
 type Email = Text
 
@@ -92,8 +87,8 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   
   addUnverified :: Email -> VerificationToken -> AuthHandler site (AuthEmailId site)
   
-  addUnverifiedWithPass :: Email -> VerificationToken -> SaltedPassword -> AuthHandler site (AuthEmailId site)
-  addUnverifiedWithPass email verkey _ = addUnverified email verkey
+  addUnverifiedWithPassword :: Email -> VerificationToken -> SaltedPassword -> AuthHandler site (AuthEmailId site)
+  addUnverifiedWithPassword email verificationToken _ = addUnverified email verificationToken
   
   sendVerifyEmail :: Email -> VerificationToken -> VerificationUrl -> AuthHandler site ()
   
@@ -109,55 +104,48 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   verifyPassword :: Text -> SaltedPassword -> AuthHandler site Bool
   verifyPassword plain salted = return $ isValidPass plain salted
   
-    -- | Verify the email address on the given account.
-    --
-    -- __/Warning!/__ If you have persisted the @'AuthEmailId' site@
-    -- somewhere, this method should delete that key, or make it unusable
-    -- in some fashion. Otherwise, the same key can be used multiple times!
-    --
-    -- See <https://github.com/yesodweb/yesod/issues/1222>.
-    --
-    -- @since 1.1.0
+  -- | Verify the email address on the given account.
+  --
+  -- __/Warning!/__ If you have persisted the @'AuthEmailId' site@
+  -- somewhere, this method should delete that key, or make it unusable
+  -- in some fashion. Otherwise, the same key can be used multiple times!
+  --
+  -- See <https://github.com/yesodweb/yesod/issues/1222>.
   verifyAccount :: AuthId site -> AuthHandler site (Maybe (AuthId site))
-    -- | Get the salted password for the given account.
-    --
-    -- @since 1.1.0
+
+  -- | Get the salted password for the given account.
   getPassword :: AuthId site -> AuthHandler site (Maybe SaltedPassword)
-    -- | Set the salted password for the given account.
-    --
-    -- @since 1.1.0
+
+  -- | Set the salted password for the given account.
   setPassword :: AuthId site -> SaltedPassword -> AuthHandler site ()
-    -- | Get the credentials for the given @Identifier@, which may be either an
-    -- email address or some other identification (e.g., username).
-    --
-    -- @since 1.2.0
+
+  -- | Get the credentials for the given @Identifier@, which may be either an
+  -- email address or some other identification (e.g., username).
   getEmailCreds :: Identifier -> AuthHandler site (Maybe (EmailCreds site))
-    -- | Get the email address for the given email ID.
-    --
-    -- @since 1.1.0
+
+  -- | Get the email address for the given email ID.
   getEmail :: AuthId site -> AuthHandler site (Maybe Email)
-    -- | Generate a random alphanumeric string.
-    --
-    -- @since 1.1.0
+
+  -- | Generate a random alphanumeric string.
   randomKey :: site -> IO VerificationToken
   randomKey _ = Nonce.nonce128urlT defaultNonceGen
 
-    -- | Check that the given plain-text password meets minimum security standards.
-    --
-    -- Default: password is at least three characters.
+  -- | Check that the given plain-text password meets minimum security standards.
+  --
+  -- Default: password is at least three characters.
   checkPasswordSecurity :: AuthId site -> Text -> AuthHandler site (Either Text ())
   checkPasswordSecurity _ x
     | TS.length x >= 3 = return $ Right ()
     | otherwise = return $ Left "Password must be at least three characters"
-    -- | Response after sending a confirmation email.
-    --
-    -- @since 1.2.2
+
+  -- | Response after sending a confirmation email.
   confirmationEmailSentResponse :: Text -> AuthHandler site Value
   confirmationEmailSentResponse identifier = do
     mr <- getMessageRender
     provideJsonMessage (mr msg)
     where
       msg = Msg.ConfirmationEmailSent identifier
+
   -- | Response after sending a confirmation email.
   resetPasswordEmailSentResponse :: Text -> AuthHandler site Value
   resetPasswordEmailSentResponse identifier = do
@@ -165,11 +153,10 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
     provideJsonMessage (mr msg)
     where
       msg = Msg.ResetPasswordEmailSent identifier
-    -- | Additional normalization of email addresses, besides standard canonicalization.
-    --
-    -- Default: Lower case the email address.
-    --
-    -- @since 1.2.3
+
+  -- | Additional normalization of email addresses, besides standard canonicalization.
+  --
+  -- Default: Lower case the email address.
   normalizeEmailAddress :: site -> Text -> Text
   normalizeEmailAddress _ = TS.toLower
 
@@ -212,8 +199,7 @@ registerHelper forgotPassword = do
              Right email -> do
                $(logInfo) $ T.pack $ show email
                if forgotPassword
-                 then do
-                   return $ ForgotPasswordCreds email
+                 then return $ ForgotPasswordCreds email
                  else do
                    let eitherPasswordField = parseEither parsePasswordField val
                    $(logInfo) $ T.pack $ show eitherPasswordField
@@ -221,8 +207,7 @@ registerHelper forgotPassword = do
                      Left missingPasswordError -> do
                        $(logError) $ T.pack $ show missingPasswordError
                        return MissingRegisterForgotPasswordPassword
-                     Right password -> do
-                       return $ RegisterCreds email password
+                     Right password -> return $ RegisterCreds email password
   $(logInfo) $ T.pack $ show jsonRegisterForgotPasswordCredsParseResult
   messageRender <- getMessageRender
   y <- getYesod -- It is used to produce randomKey
@@ -241,7 +226,7 @@ registerHelper forgotPassword = do
         | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -- canonicalize email
          -> do
           let loginRegisterCreds =
-                LoginRegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
+                RegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
           $(logInfo) $ T.pack $ show loginRegisterCreds
           return $ Right loginRegisterCreds
         | otherwise -- or return error message that the value entered as email is not one
@@ -268,7 +253,7 @@ registerHelper forgotPassword = do
             key <- liftIO $ randomKey y
             lid <-
               do salted <- hashAndSaltPassword password
-                 addUnverifiedWithPass email key salted
+                 addUnverifiedWithPassword email key salted
             return $ Just (lid, False, key, email)
           _ -> do
             $(logError) $ messageRender $ Msg.UserRowNotInValidState email
@@ -311,18 +296,17 @@ postForgotPasswordR :: YesodAuthEmail master => AuthHandler master Value
 postForgotPasswordR = registerHelper True
 
 getEmailVerificationR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
-getEmailVerificationR userId verificationKey = do
+getEmailVerificationR userId verificationToken = do
   realKey <- getVerifyKey userId
   memail <- getEmail userId
   mr <- getMessageRender
-  case (realKey == Just verificationKey, memail) of
+  case (realKey == Just verificationToken, memail) of
     (True, Just email) -> do
       muid <- verifyAccount userId
       case muid of
         Nothing -> invalidKey mr
-        Just uid -> do
+        Just _ -> do
           setCreds False $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
-          setLoginLinkKey uid
           let msgAv = Msg.AddressVerified
           provideJsonMessage $ mr msgAv
     _ -> invalidKey mr
@@ -397,15 +381,14 @@ postLoginR = do
                case eitherPasswordField of
                  Left missingPasswordError -> do
                    $(logError) $ T.pack $ show missingPasswordError
-                   return MissingPassword
-                 Right password -> do
-                   return $ LoginCreds email password
+                   return MissingLoginPassword
+                 Right password -> return $ LoginCreds email password
   $(logInfo) $ T.pack $ show jsonLoginCredsParseResult
   messageRender <- getMessageRender
   case jsonLoginCredsParseResult of
     MalformedLoginJSON -> loginErrorMessageI Msg.MalformedJSONMessage
     MissingLoginEmail -> loginErrorMessageI Msg.MissingEmailMessage
-    MissingPassword -> loginErrorMessageI Msg.MissingPasswordMessage
+    MissingLoginPassword -> loginErrorMessageI Msg.MissingPasswordMessage
     LoginCreds email password
       | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
         emailCreds <- getEmailCreds $ decodeUtf8With lenientDecode email'
@@ -464,11 +447,8 @@ postLoginR = do
       | otherwise -> do
         $(logError) $ messageRender Msg.InvalidEmailAddress
         loginErrorMessageI Msg.InvalidEmailAddress
-    _ -> do
-      $(logError) $ T.pack "Invalid pattern match"
-      loginErrorMessageI Msg.RegistrationFailure
 
-parseNewPasswordField :: Value -> Parser (Text)
+parseNewPasswordField :: Value -> Parser Text
 parseNewPasswordField =
   withObject
     "newPassword"
@@ -476,7 +456,7 @@ parseNewPasswordField =
        newPassword <- obj .: "new"
        return newPassword)
 
-parseConfirmPasswordField :: Value -> Parser (Text)
+parseConfirmPasswordField :: Value -> Parser Text
 parseConfirmPasswordField =
   withObject
     "confirmPassword"
@@ -542,8 +522,7 @@ postResetPasswordR userId verificationKey = do
                       salted <- hashAndSaltPassword newPassword
                       $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
                       setPassword userId salted
-                      $(logInfo) $ T.pack "New password updated"
-                      deleteSession loginLinkKey
+                      $(logInfo) $ T.pack $ "New password updated for user with userId " ++ show userId
                       messageJson200 $ messageRender Msg.PassUpdated
                   | otherwise -> do
                       $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
@@ -584,22 +563,6 @@ isValidPass' clear' salted' =
   where
     clear = TS.unpack clear'
     salted = TS.unpack salted'
-
--- | Session variable set when user logged in via a login link. See
--- 'needOldPassword'.
---
--- @since 1.2.1
-loginLinkKey :: Text
-loginLinkKey = "_AUTH_EMAIL_LOGIN_LINK"
-
--- | Set 'loginLinkKey' to the current time.
---
--- @since 1.2.1
---setLoginLinkKey :: (MonadHandler m) => AuthId site -> m ()
-setLoginLinkKey :: (MonadHandler m, YesodAuthEmail (HandlerSite m)) => AuthId (HandlerSite m) -> m ()
-setLoginLinkKey aid = do
-  now <- liftIO getCurrentTime
-  setSession loginLinkKey $ TS.pack $ show (toPathPiece aid, now)
 
 -- See https://github.com/yesodweb/yesod/issues/1245 for discussion on this
 -- use of unsafePerformIO.
