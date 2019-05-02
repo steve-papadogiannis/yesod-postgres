@@ -17,7 +17,7 @@ module Custom.Auth.Email
   , EmailCreds(..)
   , saltPass
       -- * Routes
-  , verifyR
+  , emailVerificationR
   , isValidPass
       -- * Types
   , Email
@@ -53,15 +53,16 @@ import qualified Text.Email.Validate
 import qualified Yesod.Auth.Util.PasswordStore as PS
 import           Yesod.Core
 
-verifyR :: Text -> Text -> AuthRoute
-verifyR eid verkey = PluginR "email" path
+--| The email verification AuthRoute
+emailVerificationR :: Text -> Text -> AuthRoute
+emailVerificationR userId verificationToken = PluginR "email" path
   where
-    path = "verify" : eid : [verkey]
+    path = "verify" : userId : [verificationToken]
 
-setPasswordR :: Text -> Text -> AuthRoute
-setPasswordR encryptedUserId verificationKey = PluginR "email" path
+resetPasswordR :: Text -> Text -> AuthRoute
+resetPasswordR encryptedUserId verificationToken = PluginR "email" path
   where
-    path = "set-password" : encryptedUserId : [verificationKey]
+    path = "set-password" : encryptedUserId : [verificationToken]
 
 type Email = Text
 
@@ -284,7 +285,7 @@ registerHelper forgotPassword = do
       where sendConfirmationEmail (lid, _, verKey, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
-              let verUrl = render $ tp $ verifyR (toPathPiece lid) verKey
+              let verUrl = render $ tp $ emailVerificationR (toPathPiece lid) verKey
               sendVerifyEmail email' verKey verUrl
               confirmationEmailSentResponse email'
     Right (ForgotPasswordCreds email) -> do
@@ -301,7 +302,7 @@ registerHelper forgotPassword = do
       where sendResetPasswordEmailHandler (lid, _, verKey, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
-              let verUrl = render $ tp $ setPasswordR (toPathPiece lid) verKey
+              let verUrl = render $ tp $ resetPasswordR (toPathPiece lid) verKey
               sendResetPasswordEmail email' verKey verUrl
               resetPasswordEmailSentResponse email'
     _ -> do
