@@ -183,15 +183,15 @@ authEmail = AuthPlugin "email" dispatch
   where
     dispatch "POST" ["register"] = postRegisterR >>= sendResponse
     dispatch "POST" ["forgot-password"] = postForgotPasswordR >>= sendResponse
-    dispatch "GET" ["verify", userId, verificationKey] =
-      case fromPathPiece userId of
+    dispatch "GET" ["verify", encryptedUserId, verificationToken] =
+      case fromPathPiece encryptedUserId of
         Nothing      -> notFound
-        Just userId' -> getVerifyR userId' verificationKey >>= sendResponse
+        Just encryptedUserId' -> getEmailVerificationR encryptedUserId' verificationToken >>= sendResponse
     dispatch "POST" ["login"] = postLoginR >>= sendResponse
-    dispatch "POST" ["set-password", userId, verificationKey] =
-      case fromPathPiece userId of
+    dispatch "POST" ["reset-password", encryptedUserId, verificationToken] =
+      case fromPathPiece encryptedUserId of
         Nothing -> notFound
-        Just userId' -> postPasswordR userId' verificationKey >>= sendResponse
+        Just encryptedUserId' -> postResetPasswordR encryptedUserId' verificationToken >>= sendResponse
     dispatch _ _ = notFound
 
 registerHelper ::
@@ -315,8 +315,8 @@ postRegisterR = registerHelper False
 postForgotPasswordR :: YesodAuthEmail master => AuthHandler master Value
 postForgotPasswordR = registerHelper True
 
-getVerifyR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
-getVerifyR userId verificationKey = do
+getEmailVerificationR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
+getEmailVerificationR userId verificationKey = do
   realKey <- getVerifyKey userId
   memail <- getEmail userId
   mr <- getMessageRender
@@ -497,8 +497,8 @@ data JSONResetPasswordCredsParseResult
                        Password
   deriving (Show)
 
-postPasswordR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
-postPasswordR userId verificationKey = do
+postResetPasswordR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
+postResetPasswordR userId verificationKey = do
   (creds :: Result Value) <- parseCheckJsonBody
   jsonResetPasswordCredsParseResult <-
        case creds of
