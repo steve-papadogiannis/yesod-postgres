@@ -21,10 +21,10 @@ module Custom.Auth.Email
   , isValidPass
       -- * Types
   , Email
-  , VerKey
-  , VerUrl
-  , SaltedPass
-  , VerStatus
+  , VerificationToken
+  , VerificationUrl
+  , SaltedPassword
+  , VerificationStatus
   , Identifier
      -- * Misc
   , loginLinkKey
@@ -66,39 +66,49 @@ resetPasswordR encryptedUserId verificationToken = PluginR "email" path
 
 type Email = Text
 
-type VerKey = Text
+type VerificationToken = Text
 
-type VerUrl = Text
+type VerificationUrl = Text
 
-type SaltedPass = Text
+type SaltedPassword = Text
 
-type VerStatus = Bool
+type VerificationStatus = Bool
 
 type Identifier = Text
 
 data EmailCreds site = EmailCreds
   { emailCredsId     :: AuthEmailId site
   , emailCredsAuthId :: Maybe (AuthId site)
-  , emailCredsStatus :: VerStatus
-  , emailCredsVerkey :: Maybe VerKey
+  , emailCredsStatus :: VerificationStatus
+  , emailCredsVerkey :: Maybe VerificationToken
   , emailCredsEmail  :: Email
   }
 
 class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.AuthMessage), Show (AuthEmailId site)) =>
       YesodAuthEmail site
   where
+  
   type AuthEmailId site
-  addUnverified :: Email -> VerKey -> AuthHandler site (AuthEmailId site)
-  addUnverifiedWithPass :: Email -> VerKey -> SaltedPass -> AuthHandler site (AuthEmailId site)
+  
+  addUnverified :: Email -> VerificationToken -> AuthHandler site (AuthEmailId site)
+  
+  addUnverifiedWithPass :: Email -> VerificationToken -> SaltedPassword -> AuthHandler site (AuthEmailId site)
   addUnverifiedWithPass email verkey _ = addUnverified email verkey
-  sendVerifyEmail :: Email -> VerKey -> VerUrl -> AuthHandler site ()
-  sendResetPasswordEmail :: Email -> VerKey -> VerUrl -> AuthHandler site ()
-  getVerifyKey :: AuthId site -> AuthHandler site (Maybe VerKey)
-  setVerifyKey :: AuthEmailId site -> VerKey -> AuthHandler site ()
-  hashAndSaltPassword :: Text -> AuthHandler site SaltedPass
+  
+  sendVerifyEmail :: Email -> VerificationToken -> VerificationUrl -> AuthHandler site ()
+  
+  sendResetPasswordEmail :: Email -> VerificationToken -> VerificationUrl -> AuthHandler site ()
+  
+  getVerifyKey :: AuthId site -> AuthHandler site (Maybe VerificationToken)
+  
+  setVerifyKey :: AuthEmailId site -> VerificationToken -> AuthHandler site ()
+  
+  hashAndSaltPassword :: Text -> AuthHandler site SaltedPassword
   hashAndSaltPassword = liftIO . saltPass
-  verifyPassword :: Text -> SaltedPass -> AuthHandler site Bool
+  
+  verifyPassword :: Text -> SaltedPassword -> AuthHandler site Bool
   verifyPassword plain salted = return $ isValidPass plain salted
+  
     -- | Verify the email address on the given account.
     --
     -- __/Warning!/__ If you have persisted the @'AuthEmailId' site@
@@ -112,11 +122,11 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
     -- | Get the salted password for the given account.
     --
     -- @since 1.1.0
-  getPassword :: AuthId site -> AuthHandler site (Maybe SaltedPass)
+  getPassword :: AuthId site -> AuthHandler site (Maybe SaltedPassword)
     -- | Set the salted password for the given account.
     --
     -- @since 1.1.0
-  setPassword :: AuthId site -> SaltedPass -> AuthHandler site ()
+  setPassword :: AuthId site -> SaltedPassword -> AuthHandler site ()
     -- | Get the credentials for the given @Identifier@, which may be either an
     -- email address or some other identification (e.g., username).
     --
@@ -129,24 +139,9 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
     -- | Generate a random alphanumeric string.
     --
     -- @since 1.1.0
-  randomKey :: site -> IO VerKey
+  randomKey :: site -> IO VerificationToken
   randomKey _ = Nonce.nonce128urlT defaultNonceGen
-    -- | Does the user need to provide the current password in order to set a
-    -- new password?
-    --
-    -- Default: if the user logged in via an email link do not require a password.
-    --
-    -- @since 1.2.1
-  needOldPassword :: AuthId site -> AuthHandler site Bool
-  needOldPassword aid' = do
-    mkey <- lookupSession loginLinkKey
-    case mkey >>= readMay . TS.unpack of
-      Just (aidT, time)
-        | Just aid <- fromPathPiece aidT
-        , toPathPiece (aid `asTypeOf` aid') == toPathPiece aid' -> do
-          now <- liftIO getCurrentTime
-          return $ addUTCTime (60 * 30) time <= now
-      _ -> return True
+
     -- | Check that the given plain-text password meets minimum security standards.
     --
     -- Default: password is at least three characters.
@@ -575,13 +570,13 @@ saltPass' salt pass =
 
 isValidPass ::
      Text -- ^ cleartext password
-  -> SaltedPass -- ^ salted password
+  -> SaltedPassword -- ^ salted password
   -> Bool
 isValidPass ct salted = PS.verifyPassword (encodeUtf8 ct) (encodeUtf8 salted) || isValidPass' ct salted
 
 isValidPass' ::
      Text -- ^ cleartext password
-  -> SaltedPass -- ^ salted password
+  -> SaltedPassword -- ^ salted password
   -> Bool
 isValidPass' clear' salted' =
   let salt = take saltLength salted
