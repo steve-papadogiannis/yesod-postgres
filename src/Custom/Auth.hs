@@ -24,7 +24,7 @@ module Custom.Auth
       -- * Plugin interface
     , Creds (..)
     , setCreds
-    , setCredsRedirect
+    , setCredsWithResponse
     , clearCreds
     , loginErrorMessage
     , loginErrorMessageI
@@ -49,27 +49,27 @@ module Custom.Auth
     , asHtml
     ) where
 
-import           Control.Monad.Trans.Maybe
-import           UnliftIO                  (withRunInIO, MonadUnliftIO)
-import           Custom.Auth.Routes
-import           Data.Aeson                 hiding (json)
-import           Data.Text                  (Text)
 import qualified Data.Text                  as T
 import qualified Data.HashMap.Lazy          as Map
+import qualified Custom.Auth.Message        as Msg
+import qualified Network.Wai                as W
+import           UnliftIO                  (withRunInIO, MonadUnliftIO)
+import           Data.Aeson                 hiding (json)
+import           Data.Text                  (Text)
 import           Network.HTTP.Client        (Manager, Request, withResponse, Response, BodyReader)
 import           Network.HTTP.Client.TLS    (getGlobalManager)
-import           Yesod.Core
-import           Yesod.Persist
 import           Custom.Auth.Message        (AuthMessage, defaultMessage)
-import qualified Custom.Auth.Message        as Msg
 import           Yesod.Form                 (FormMessage)
 import           Data.Typeable              (Typeable)
 import           Control.Exception          (Exception)
 import           Network.HTTP.Types         (Status, internalServerError500, unauthorized401, ok200)
 import           Control.Monad              (void)
-import qualified Network.Wai                as W
 import           Data.Text.Encoding         (decodeUtf8With)
 import           Data.Text.Encoding.Error   (lenientDecode)
+import           Control.Monad.Trans.Maybe
+import           Custom.Auth.Routes
+import           Yesod.Core
+import           Yesod.Persist
 
 type AuthRoute = Route Auth
 type MonadAuthHandler master m = (MonadHandler m, YesodAuth master, master ~ HandlerSite m, Auth ~ SubHandlerSite m, MonadUnliftIO m)
@@ -258,11 +258,11 @@ provideJsonMessage :: MonadHandler m => Text -> m Value
 provideJsonMessage msg = return $ object ["message" .= msg]
 
 
-setCredsRedirect
+setCredsWithResponse
   :: (MonadHandler m, YesodAuth (HandlerSite m))
   => Creds (HandlerSite m) -- ^ new credentials
   -> m Value
-setCredsRedirect creds = do
+setCredsWithResponse creds = do
     y    <- getYesod
     auth <- authenticate creds
     case auth of
@@ -294,16 +294,13 @@ setCredsRedirect creds = do
 
 -- | Sets user credentials for the session after checking them with authentication backends.
 setCreds :: (MonadHandler m, YesodAuth (HandlerSite m))
-         => Bool                  -- ^ if HTTP redirects should be done
-         -> Creds (HandlerSite m) -- ^ new credentials
+         => Creds (HandlerSite m) -- ^ new credentials
          -> m ()
-setCreds doRedirects creds =
-    if doRedirects
-      then void $ setCredsRedirect creds
-      else do auth <- authenticate creds
-              case auth of
-                  Authenticated aid -> setSession credsKey $ toPathPiece aid
-                  _ -> return ()
+setCreds creds = do
+  auth <- authenticate creds
+  case auth of
+    Authenticated aid -> setSession credsKey $ toPathPiece aid
+    _ -> return ()
 
 -- | same as defaultLayoutJson, but uses authLayout
 authLayoutJson

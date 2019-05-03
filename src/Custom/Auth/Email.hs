@@ -306,7 +306,7 @@ getEmailVerificationR userId verificationToken = do
       case muid of
         Nothing -> invalidKey mr
         Just _ -> do
-          setCreds False $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
+          setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
           let msgAv = Msg.AddressVerified
           provideJsonMessage $ mr msgAv
     _ -> invalidKey mr
@@ -416,7 +416,7 @@ postLoginR = do
         let isEmail = Text.Email.Validate.isValid $ encodeUtf8 email
         case loginResult of
           LoginValidationSuccess email'' ->
-            setCredsRedirect $
+            setCredsWithResponse $
             Creds
               (if isEmail
                  then "email"
