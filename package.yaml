@@ -50,6 +50,7 @@ dependencies:
 - email-validate >= 2.3.2.9
 - memory >= 0.14.18
 - HUnit >= 1.6.0.0
+- clientsession >= 0.9.1 && < 0.10
 - file-embed
 - safe
 - unordered-containers

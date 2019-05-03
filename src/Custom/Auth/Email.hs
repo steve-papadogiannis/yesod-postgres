@@ -35,6 +35,7 @@ import qualified Data.Text                     as TS
 import qualified Data.Text                     as T
 import qualified Data.Text.Encoding            as TE
 import qualified Yesod.Auth.Util.PasswordStore as PS
+import qualified Web.ClientSession             as CS
 import qualified Text.Email.Validate
 import           Control.Applicative           ((<$>))
 import           Data.ByteArray                (convert)
@@ -46,6 +47,7 @@ import           System.IO.Unsafe              (unsafePerformIO)
 import           Data.Aeson.Types              (Parser, Result (..), parseEither, withObject)
 import           Custom.Auth
 import           Yesod.Core
+import           Network.HTTP.Types.URI
 
 -- | The email verification AuthRoute
 emailVerificationR :: Text -> Text -> AuthRoute
@@ -265,7 +267,10 @@ registerHelper forgotPassword = do
       where sendConfirmationEmail (lid, _, verKey, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
-              let verUrl = render $ tp $ emailVerificationR (toPathPiece lid) verKey
+              key <- liftIO $ CS.getKey  "config/client_session_key.aes"
+              iv <- liftIO $ CS.randomIV
+              let a = CS.encrypt key iv (encodeUtf8 . toPathPiece $ lid)
+              let verUrl = render $ tp $ emailVerificationR (TE.decodeUtf8 $ urlEncode True a) verKey
               sendVerifyEmail email' verKey verUrl
               confirmationEmailSentResponse email'
     Right (ForgotPasswordCreds email) -> do
@@ -295,24 +300,37 @@ postRegisterR = registerHelper False
 postForgotPasswordR :: YesodAuthEmail master => AuthHandler master Value
 postForgotPasswordR = registerHelper True
 
-getEmailVerificationR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
-getEmailVerificationR userId verificationToken = do
-  realKey <- getVerificationToken userId
-  memail <- getEmail userId
-  mr <- getMessageRender
-  case (realKey == Just verificationToken, memail) of
-    (True, Just email) -> do
-      muid <- verifyAccount userId
-      case muid of
-        Nothing -> invalidKey mr
-        Just _ -> do
-          setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
-          let msgAv = Msg.AddressVerified
-          provideJsonMessage $ mr msgAv
-    _ -> invalidKey mr
-  where
-    msgIk = Msg.InvalidKey
-    invalidKey mr = messageJson401 (mr msgIk)
+getEmailVerificationR :: YesodAuthEmail site => Text -> Text -> AuthHandler site Value
+getEmailVerificationR urlEncodedEncryptedUserId verificationToken = do
+  key <- liftIO $ CS.getKey  "config/client_session_key.aes"
+  let maybeUserId = CS.decrypt key $ urlDecode True $ encodeUtf8 urlEncodedEncryptedUserId
+  case maybeUserId of
+    Nothing -> do
+      $(logError) $ (T.pack "Unable to decrypt ") `T.append` urlEncodedEncryptedUserId
+      provideJsonMessage $ (T.pack "Unable to decrypt ") `T.append` urlEncodedEncryptedUserId
+    Just userId -> do
+      let maybeUserId' = fromPathPiece $ TE.decodeUtf8 userId
+      case maybeUserId' of
+        Nothing -> do
+          $(logError) $ (T.pack "Unable to parse path piece ") `T.append` TE.decodeUtf8 userId
+          provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` TE.decodeUtf8 userId
+        Just userId' -> do
+          realKey <- getVerificationToken userId'
+          memail <- getEmail userId'
+          mr <- getMessageRender
+          case (realKey == Just verificationToken, memail) of
+            (True, Just email) -> do
+              muid <- verifyAccount userId'
+              case muid of
+                Nothing -> invalidKey mr
+                Just _ -> do
+                  setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
+                  let msgAv = Msg.AddressVerified
+                  provideJsonMessage $ mr msgAv
+            _ -> invalidKey mr
+          where
+            msgIk = Msg.InvalidKey
+            invalidKey mr = messageJson401 (mr msgIk)
 
 parseEmailField :: Value -> Parser Text
 parseEmailField =
