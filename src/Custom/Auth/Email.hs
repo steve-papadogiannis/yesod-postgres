@@ -302,12 +302,14 @@ postForgotPasswordR = registerHelper True
 
 getEmailVerificationR :: YesodAuthEmail site => Text -> Text -> AuthHandler site Value
 getEmailVerificationR urlEncodedEncryptedUserId verificationToken = do
+  let encryptedUserId = urlDecode True $ encodeUtf8 urlEncodedEncryptedUserId
   key <- liftIO $ CS.getKey  "config/client_session_key.aes"
-  let maybeUserId = CS.decrypt key $ urlDecode True $ encodeUtf8 urlEncodedEncryptedUserId
+  let maybeUserId = CS.decrypt key encryptedUserId
+  messageRender <- getMessageRender
   case maybeUserId of
     Nothing -> do
-      $(logError) $ (T.pack "Unable to decrypt ") `T.append` urlEncodedEncryptedUserId
-      provideJsonMessage $ (T.pack "Unable to decrypt ") `T.append` urlEncodedEncryptedUserId
+      $(logError) $ messageRender $ Msg.UnableToDecryptUserId $ TE.decodeUtf8 encryptedUserId
+      provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId $ TE.decodeUtf8 encryptedUserId
     Just userId -> do
       let maybeUserId' = fromPathPiece $ TE.decodeUtf8 userId
       case maybeUserId' of
@@ -317,17 +319,16 @@ getEmailVerificationR urlEncodedEncryptedUserId verificationToken = do
         Just userId' -> do
           realKey <- getVerificationToken userId'
           memail <- getEmail userId'
-          mr <- getMessageRender
           case (realKey == Just verificationToken, memail) of
             (True, Just email) -> do
               muid <- verifyAccount userId'
               case muid of
-                Nothing -> invalidKey mr
+                Nothing -> invalidKey messageRender
                 Just _ -> do
                   setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
                   let msgAv = Msg.AddressVerified
-                  provideJsonMessage $ mr msgAv
-            _ -> invalidKey mr
+                  provideJsonMessage $ messageRender msgAv
+            _ -> invalidKey messageRender
           where
             msgIk = Msg.InvalidKey
             invalidKey mr = messageJson401 (mr msgIk)

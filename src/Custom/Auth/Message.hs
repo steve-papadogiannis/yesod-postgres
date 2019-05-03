@@ -73,6 +73,7 @@ data AuthMessage
   | InvalidVerificationKeyInternalMessage Text Text Text
   | InvalidVerificationKey
   | MissingVerificationKeyInternalMessage Text Text
+  | UnableToDecryptUserId Text
 
 {-# DEPRECATED
 Logout "Please, use LogoutTitle instead."
@@ -157,3 +158,4 @@ englishMessage InvalidVerificationKey = "Invalid verification key"
 englishMessage (MissingVerificationKeyInternalMessage userId verificationKey) =
   "Invalid verification key. User with userId " `mappend` userId `mappend` " requested /set-password with verification key "
   `mappend` verificationKey `mappend` " but stored verification key was not set"
+englishMessage (UnableToDecryptUserId encryptedUserId) = "Unable to decrypt " `mappend` encryptedUserId
