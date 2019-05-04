@@ -305,26 +305,32 @@ postRegisterR = registerHelper False
 postForgotPasswordR :: YesodAuthEmail master => AuthHandler master Value
 postForgotPasswordR = registerHelper True
 
+decryptAndUrlDecode :: YesodAuthEmail master => Text -> AuthHandler master (Maybe Text)
+decryptAndUrlDecode value = do
+  key <- liftIO $ CS.getKey "config/client_session_key.aes"
+  let maybeUserId = CS.decrypt key $ urlDecode True $ encodeUtf8 value
+  return $ maybeUserId >>= (\userId ->
+    TE.decodeUtf8 userId)
+
 getEmailVerificationR :: YesodAuthEmail site => Text -> Text -> AuthHandler site Value
-getEmailVerificationR urlEncodedEncryptedUserId verificationToken = do
-  let encryptedUserId = urlDecode True $ encodeUtf8 urlEncodedEncryptedUserId
-  key <- liftIO $ CS.getKey  "config/client_session_key.aes"
-  let maybeUserId = CS.decrypt key encryptedUserId
+getEmailVerificationR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToken = do
+  maybeUserId <- decryptAndUrlDecode urlEncodedEncryptedUserId
+  maybeVerificationToken <- decryptAndUrlDecode urlEncodedEncryptedVerificationToken
   messageRender <- getMessageRender
   case maybeUserId of
     Nothing -> do
-      $(logError) $ messageRender $ Msg.UnableToDecryptUserId $ TE.decodeUtf8 encryptedUserId
-      provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId $ TE.decodeUtf8 encryptedUserId
+      $(logError) $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
+      provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
     Just userId -> do
-      let maybeUserId' = fromPathPiece $ TE.decodeUtf8 userId
+      let maybeUserId' = fromPathPiece userId
       case maybeUserId' of
         Nothing -> do
-          $(logError) $ (T.pack "Unable to parse path piece ") `T.append` TE.decodeUtf8 userId
-          provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` TE.decodeUtf8 userId
+          $(logError) $ (T.pack "Unable to parse path piece ") `T.append` userId
+          provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` userId
         Just userId' -> do
           realKey <- getVerificationToken userId'
           memail <- getEmail userId'
-          case (realKey == Just verificationToken, memail) of
+          case (realKey == maybeVerificationToken, memail) of
             (True, Just email) -> do
               muid <- verifyAccount userId'
               case muid of
