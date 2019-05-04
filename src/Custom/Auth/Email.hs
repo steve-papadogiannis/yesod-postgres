@@ -312,7 +312,7 @@ decryptAndUrlDecode value = do
   key <- liftIO $ CS.getKey "config/client_session_key.aes"
   let maybeUserId = CS.decrypt key $ urlDecode True $ encodeUtf8 value
   return $ maybeUserId >>= (\userId ->
-    TE.decodeUtf8 userId)
+    Just $ TE.decodeUtf8 userId)
 
 getEmailVerificationR :: YesodAuthEmail site => Text -> Text -> AuthHandler site Value
 getEmailVerificationR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToken = do
@@ -504,7 +504,7 @@ data JSONResetPasswordCredsParseResult
                        Password
   deriving (Show)
 
-postResetPasswordR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
+postResetPasswordR :: YesodAuthEmail site => Text -> Text -> AuthHandler site Value
 postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToken = do
   (creds :: Result Value) <- parseCheckJsonBody
   jsonResetPasswordCredsParseResult <-
@@ -542,7 +542,7 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
         Nothing -> do
           $(logError) $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
           provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
-        Just verificationToken -> do
+        Just verificationToken ->
           case jsonResetPasswordCredsParseResult of
             MalformedResetPasswordJSON -> loginErrorMessageI Msg.MalformedJSONMessage
             MissingNewPassword -> do
@@ -553,31 +553,37 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
               loginErrorMessageI Msg.MissingConfirmPasswordMessage
             ResetPasswordCreds newPassword confirmPassword
               | newPassword == confirmPassword -> do
-                isSecure <- checkPasswordSecurity userId newPassword
-                case isSecure of
-                  Left e -> do
-                    $(logError) e
-                    loginErrorMessage e
-                  Right () -> do
-                    storedVerificationKey <- getVerificationToken userId
-                    case (storedVerificationKey, verificationKey) of
-                      (Just value, vk)
-                        | value == vk -> do
-                          salted <- hashAndSaltPassword newPassword
-                          $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
-                          setPassword userId salted
-                          $(logInfo) $ T.pack $ "New password updated for user with userId " ++ show userId
-                          messageJson200 $ messageRender Msg.PassUpdated
-                        | otherwise -> do
-                          $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
-                            vk value
-                          loginErrorMessageI Msg.InvalidVerificationKey
-                      (Nothing, vk) -> do
-                        $(logError) $ messageRender $ Msg.MissingVerificationKeyInternalMessage (T.pack $ show userId) vk
-                        loginErrorMessageI Msg.InvalidVerificationKey
-               | otherwise -> do
-                 $(logError) $ messageRender $ Msg.PassMismatchInternalMessage $ T.pack $ show userId
-                 loginErrorMessageI Msg.PassMismatch
+                let maybeUserId' = fromPathPiece userId
+                case maybeUserId' of
+                  Nothing -> do
+                    $(logError) $ (T.pack "Unable to parse path piece ") `T.append` userId
+                    provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` userId
+                  Just userId' -> do
+                    isSecure <- checkPasswordSecurity userId' newPassword
+                    case isSecure of
+                      Left e -> do
+                        $(logError) e
+                        loginErrorMessage e
+                      Right () -> do
+                        storedVerificationKey <- getVerificationToken userId'
+                        case (storedVerificationKey, verificationToken) of
+                          (Just value, vk)
+                            | value == vk -> do
+                              salted <- hashAndSaltPassword newPassword
+                              $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
+                              setPassword userId' salted
+                              $(logInfo) $ T.pack $ "New password updated for user with userId " ++ show userId
+                              messageJson200 $ messageRender Msg.PassUpdated
+                            | otherwise -> do
+                              $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
+                                vk value
+                              loginErrorMessageI Msg.InvalidVerificationKey
+                          (Nothing, vk) -> do
+                            $(logError) $ messageRender $ Msg.MissingVerificationKeyInternalMessage (T.pack $ show userId) vk
+                            loginErrorMessageI Msg.InvalidVerificationKey
+              | otherwise -> do
+                $(logError) $ messageRender $ Msg.PassMismatchInternalMessage $ T.pack $ show userId
+                loginErrorMessageI Msg.PassMismatch
 
 saltLength :: Int
 saltLength = 5
