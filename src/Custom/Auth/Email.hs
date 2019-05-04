@@ -178,6 +178,12 @@ authEmail = AuthPlugin "email" dispatch
         Just encryptedUserId' -> postResetPasswordR encryptedUserId' verificationToken >>= sendResponse
     dispatch _ _ = notFound
 
+encryptAndUrlEncode :: YesodAuthEmail master => Text -> AuthHandler master Text
+encryptAndUrlEncode value = do
+  key <- liftIO $ CS.getKey "config/client_session_key.aes"
+  iv <- liftIO $ CS.randomIV
+  return $ TE.decodeUtf8 $ urlEncode True $ CS.encrypt key iv (encodeUtf8 value)
+
 registerHelper ::
      YesodAuthEmail master
   => Bool -- ^ forgot password?
@@ -264,14 +270,13 @@ registerHelper forgotPassword = do
         Just creds1@(_, False, _, _) -> sendConfirmationEmail creds1
         Just (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
         _ -> loginErrorMessageI Msg.RegistrationFailure
-      where sendConfirmationEmail (lid, _, verKey, email') = do
+      where sendConfirmationEmail (lid, _, verificationToken, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
-              key <- liftIO $ CS.getKey  "config/client_session_key.aes"
-              iv <- liftIO $ CS.randomIV
-              let a = CS.encrypt key iv (encodeUtf8 . toPathPiece $ lid)
-              let verUrl = render $ tp $ emailVerificationR (TE.decodeUtf8 $ urlEncode True a) verKey
-              sendVerifyEmail email' verKey verUrl
+              encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ lid
+              encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode verificationToken
+              let verificationUrl = render $ tp $ emailVerificationR encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+              sendVerifyEmail email' verificationToken verificationUrl
               confirmationEmailSentResponse email'
     Right (ForgotPasswordCreds email) -> do
       mecreds <- getEmailCreds email
