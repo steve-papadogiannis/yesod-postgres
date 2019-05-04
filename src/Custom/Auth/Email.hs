@@ -289,11 +289,13 @@ registerHelper forgotPassword = do
       case registerCreds of
         Nothing     -> loginErrorMessageI Msg.ForgotPasswordFailure
         Just creds1 -> sendResetPasswordEmailHandler creds1
-      where sendResetPasswordEmailHandler (lid, _, verKey, email') = do
+      where sendResetPasswordEmailHandler (authId, _, verificationToken, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
-              let verUrl = render $ tp $ resetPasswordR (toPathPiece lid) verKey
-              sendResetPasswordEmail email' verKey verUrl
+              encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ authId
+              encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode verificationToken
+              let verificationUrl = render $ tp $ resetPasswordR encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+              sendResetPasswordEmail email' verificationToken verificationUrl
               resetPasswordEmailSentResponse email'
     _ -> do
       $(logError) $ T.pack "Invalid pattern match"
@@ -503,7 +505,7 @@ data JSONResetPasswordCredsParseResult
   deriving (Show)
 
 postResetPasswordR :: YesodAuthEmail site => AuthId site -> Text -> AuthHandler site Value
-postResetPasswordR userId verificationKey = do
+postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToken = do
   (creds :: Result Value) <- parseCheckJsonBody
   jsonResetPasswordCredsParseResult <-
        case creds of
@@ -528,6 +530,9 @@ postResetPasswordR userId verificationKey = do
                    return MissingConfirmPassword
                  Right confirmPassword ->
                    return $ ResetPasswordCreds newPassword confirmPassword
+  maybeUserId <- decryptAndUrlDecode urlEncodedEncryptedUserId
+  maybeVerificationToken <- decryptAndUrlDecode urlEncodedEncryptedVerificationToken
+  -- TODO write pattern matches for userId and verificationToken
   messageRender <- getMessageRender
   case jsonResetPasswordCredsParseResult of
     MalformedResetPasswordJSON -> loginErrorMessageI Msg.MalformedJSONMessage
