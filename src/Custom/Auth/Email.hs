@@ -531,44 +531,49 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                  Right confirmPassword ->
                    return $ ResetPasswordCreds newPassword confirmPassword
   maybeUserId <- decryptAndUrlDecode urlEncodedEncryptedUserId
-  maybeVerificationToken <- decryptAndUrlDecode urlEncodedEncryptedVerificationToken
-  -- TODO write pattern matches for userId and verificationToken
-  messageRender <- getMessageRender
-  case jsonResetPasswordCredsParseResult of
-    MalformedResetPasswordJSON -> loginErrorMessageI Msg.MalformedJSONMessage
-    MissingNewPassword -> do
-      $(logError) $ messageRender $ Msg.MissingNewPasswordInternalMessage $ T.pack $ show userId
-      loginErrorMessageI Msg.MissingNewPasswordMessage
-    MissingConfirmPassword -> do
-      $(logError) $ messageRender $ Msg.MissingConfirmPasswordInternalMessage $ T.pack $ show userId
-      loginErrorMessageI Msg.MissingConfirmPasswordMessage
-    ResetPasswordCreds newPassword confirmPassword
-      | newPassword == confirmPassword -> do
-          isSecure <- checkPasswordSecurity userId newPassword
-          case isSecure of
-            Left e -> do
-              $(logError) e
-              loginErrorMessage e
-            Right () -> do
-              storedVerificationKey <- getVerificationToken userId
-              case (storedVerificationKey, verificationKey) of
-                (Just value, vk)
-                  | value == vk -> do
+  case maybeUserId of
+    Nothing -> do
+      $(logError) $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
+      provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
+    Just userId -> do
+      maybeVerificationToken <- decryptAndUrlDecode urlEncodedEncryptedVerificationToken
+      -- TODO write pattern matches for userId and verificationToken
+      messageRender <- getMessageRender
+      case jsonResetPasswordCredsParseResult of
+        MalformedResetPasswordJSON -> loginErrorMessageI Msg.MalformedJSONMessage
+        MissingNewPassword -> do
+          $(logError) $ messageRender $ Msg.MissingNewPasswordInternalMessage $ T.pack $ show userId
+          loginErrorMessageI Msg.MissingNewPasswordMessage
+        MissingConfirmPassword -> do
+          $(logError) $ messageRender $ Msg.MissingConfirmPasswordInternalMessage $ T.pack $ show userId
+          loginErrorMessageI Msg.MissingConfirmPasswordMessage
+        ResetPasswordCreds newPassword confirmPassword
+          | newPassword == confirmPassword -> do
+            isSecure <- checkPasswordSecurity userId newPassword
+            case isSecure of
+              Left e -> do
+                $(logError) e
+                loginErrorMessage e
+              Right () -> do
+                storedVerificationKey <- getVerificationToken userId
+                case (storedVerificationKey, verificationKey) of
+                  (Just value, vk)
+                    | value == vk -> do
                       salted <- hashAndSaltPassword newPassword
                       $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
                       setPassword userId salted
                       $(logInfo) $ T.pack $ "New password updated for user with userId " ++ show userId
                       messageJson200 $ messageRender Msg.PassUpdated
-                  | otherwise -> do
+                    | otherwise -> do
                       $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
                         vk value
                       loginErrorMessageI Msg.InvalidVerificationKey
-                (Nothing, vk) -> do
-                  $(logError) $ messageRender $ Msg.MissingVerificationKeyInternalMessage (T.pack $ show userId) vk
-                  loginErrorMessageI Msg.InvalidVerificationKey
-      | otherwise -> do
-          $(logError) $ messageRender $ Msg.PassMismatchInternalMessage $ T.pack $ show userId
-          loginErrorMessageI Msg.PassMismatch
+                  (Nothing, vk) -> do
+                    $(logError) $ messageRender $ Msg.MissingVerificationKeyInternalMessage (T.pack $ show userId) vk
+                    loginErrorMessageI Msg.InvalidVerificationKey
+        | otherwise -> do
+            $(logError) $ messageRender $ Msg.PassMismatchInternalMessage $ T.pack $ show userId
+            loginErrorMessageI Msg.PassMismatch
 
 saltLength :: Int
 saltLength = 5
