@@ -1,7 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Custom.Auth.Handler.CheckRSpec (spec) where
+module Custom.Auth.Email.Handler.VerifySpec (spec) where
 
 import TestImport
 

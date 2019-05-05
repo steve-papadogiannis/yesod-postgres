@@ -6,26 +6,28 @@ module TestImport
     , module X
     ) where
 
-import Application           (makeFoundation, makeLogWare)
-import ClassyPrelude         as X hiding (delete, deleteBy, Handler)
-import Database.Persist      as X hiding (get)
-import Database.Persist.Sql  (SqlPersistM, runSqlPersistMPool, rawExecute, rawSql, unSingle, connEscapeName)
-import Foundation            as X
-import Model                 as X
-import Test.Hspec            as X
-import Text.Shakespeare.Text (st)
-import Yesod.Default.Config2 (useEnv, loadYamlSettings)
-import Custom.Auth           as X
-import Custom.Auth.Routes    as X
-import Yesod.Test            as X
-import Yesod.Core.Unsafe     (fakeHandlerGetLogger)
-import Data.Maybe            (fromJust)
-import Data.Aeson            as X
-import Data.CaseInsensitive (CI)
-import qualified Data.ByteString.Char8 as BS8
-import Network.Wai.Test hiding (assertHeader, assertNoHeader, request)
-import qualified Data.Text as T
-import qualified Test.HUnit as HUnit
+import qualified Data.ByteString.Char8  as BS8
+import qualified Web.ClientSession      as CS
+import qualified Test.HUnit             as HUnit
+import qualified Data.Text              as T
+import           Yesod.Default.Config2  (useEnv, loadYamlSettings)
+import           Text.Shakespeare.Text  (st)
+import           Database.Persist.Sql   (SqlPersistM, runSqlPersistMPool, rawExecute, rawSql, unSingle, connEscapeName)
+import           Data.CaseInsensitive   (CI)
+import           Custom.Auth.Routes     as X
+import           Yesod.Core.Unsafe      (fakeHandlerGetLogger)
+import           Network.Wai.Test       hiding (assertHeader, assertNoHeader, request)
+import           Database.Persist       as X hiding (get)
+import           ClassyPrelude          as X hiding (delete, deleteBy, Handler)
+import           Application            (makeFoundation, makeLogWare)
+import           Custom.Auth            as X
+import           Foundation             as X
+import           Test.Hspec             as X
+import           Yesod.Test             as X
+import           Data.Maybe             (fromJust)
+import           Data.Aeson             as X
+import           Model                  as X
+import           Network.HTTP.Types.URI
 
 runDB :: SqlPersistM a -> YesodExample App a
 runDB query = do
@@ -109,6 +111,12 @@ createUser ident =
           , emailVerkey = Nothing
           }
       return user
+
+encryptAndUrlEncode :: Text -> YesodExample App Text
+encryptAndUrlEncode value = do
+  key <- liftIO $ CS.getKey "config/client_session_key.aes"
+  iv <- liftIO $ CS.randomIV
+  return $ X.decodeUtf8 $ urlEncode True $ CS.encrypt key iv (encodeUtf8 value)
 
 -- | Assert the given header was returned.
 assertHeaderWithoutValue :: HasCallStack => CI BS8.ByteString -> YesodExample site ()

@@ -255,7 +255,7 @@ registerHelper forgotPassword = do
       mecreds <- getEmailCreds email
       registerCreds <-
         case mecreds of
-          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
+          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Right (lid, verStatus, key, email')
           Nothing -- The user has not been registered yet
            -> do
             isSecure <- checkPasswordSecurity password
@@ -263,20 +263,20 @@ registerHelper forgotPassword = do
             case isSecure of
               Left e -> do
                 $(logError) e
-                return Nothing
+                return $ Left e
               Right () -> do
                 key <- liftIO $ randomKey y
                 lid <-
                   do salted <- hashAndSaltPassword password
                      addUnverifiedWithPassword email key salted
-                return $ Just (lid, False, key, email)
+                return $ Right (lid, False, key, email)
           _ -> do
             $(logError) $ messageRender $ Msg.UserRowNotInValidState email
-            return Nothing
+            return $ Left $ messageRender Msg.RegistrationFailure
       case registerCreds of
-        Just creds1@(_, False, _, _) -> sendConfirmationEmail creds1
-        Just (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
-        _ -> loginErrorMessageI Msg.RegistrationFailure
+        Right creds1@(_, False, _, _) -> sendConfirmationEmail creds1
+        Right (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
+        Left e -> provideJsonMessage e
       where sendConfirmationEmail (lid, _, verificationToken, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
