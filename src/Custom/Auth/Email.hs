@@ -283,6 +283,9 @@ registerHelper forgotPassword = do
       registerCreds <-
         case mecreds of
           Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
+          Nothing -> do
+            $(logError) $ messageRender $ Msg.NoSuchUser email
+            return Nothing
           _ -> do
             $(logError) $ messageRender $ Msg.UserRowNotInValidState email
             return Nothing

@@ -3,26 +3,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
+
 -- | Settings are centralized, as much as possible, into this file. This
 -- includes database connection settings, static file locations, etc.
 -- In addition, you can configure a number of different aspects of Yesod
 -- by overriding methods in the Yesod typeclass. That instance is
 -- declared in the Foundation.hs file.
+
 module Settings where
 
-import           ClassyPrelude.Yesod
 import qualified Control.Exception           as Exception
-import           Data.Aeson                  (Result (..), fromJSON, withObject,
-                                              (.!=), (.:?))
-import           Data.FileEmbed              (embedFile)
-import           Data.Yaml                   (decodeEither')
 import           Database.Persist.Postgresql (PostgresConf)
-import           Language.Haskell.TH.Syntax  (Exp, Name, Q)
+import           Language.Haskell.TH.Syntax  (Exp, Q)
 import           Network.Wai.Handler.Warp    (HostPreference)
 import           Yesod.Default.Config2       (applyEnvValue, configSettingsYml)
-import           Yesod.Default.Util          (WidgetFileSettings,
-                                              widgetFileNoReload,
-                                              widgetFileReload)
+import           Yesod.Default.Util          (WidgetFileSettings, widgetFileNoReload, widgetFileReload)
+import           Data.FileEmbed              (embedFile)
+import           Data.Aeson                  (Result (..), fromJSON, withObject, (.!=), (.:?))
+import           Data.Yaml                   (decodeEither')
+import           ClassyPrelude.Yesod
 
 -- | Runtime settings to configure this application. These settings can be
 -- loaded from various sources: defaults, environment variables, config files,
@@ -128,19 +127,3 @@ compileTimeAppSettings =
     case fromJSON $ applyEnvValue False mempty configSettingsYmlValue of
         Error e -> error e
         Success settings -> settings
-
--- The following two functions can be used to combine multiple CSS or JS files
--- at compile time to decrease the number of http requests.
--- Sample usage (inside a Widget):
---
--- > $(combineStylesheets 'StaticR [style1_css, style2_css])
-
---combineStylesheets :: Name -> [Route Static] -> Q Exp
---combineStylesheets = combineStylesheets'
---    (appSkipCombining compileTimeAppSettings)
---    combineSettings
---
---combineScripts :: Name -> [Route Static] -> Q Exp
---combineScripts = combineScripts'
---    (appSkipCombining compileTimeAppSettings)
---    combineSettings
