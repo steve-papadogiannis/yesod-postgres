@@ -1,7 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Custom.Auth.EmailSpec (spec) where
+module Custom.Auth.Email.Handler.ResetPasswordRSpec (spec) where
 
 import TestImport
 import Data.Aeson
@@ -10,7 +10,7 @@ import qualified Data.Text                  as T
 
 spec :: Spec
 spec = withApp $ do
-    describe "Post request to SetPasswordR" $
+    describe "Post request to ResetPasswordR" $
         it "gives a 200 and the body contains \"message\":\"Password updated\"" $ do
 
           userEntity <- createUser "steve.papadogiannis@gmail.com"

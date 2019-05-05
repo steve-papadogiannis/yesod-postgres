@@ -15,10 +15,10 @@ module Custom.Auth.Email
   ( authEmail
   , YesodAuthEmail(..)
   , EmailCreds(..)
-  , saltPass
+  , saltPassword
       -- * Routes
   , emailVerificationR
-  , isValidPass
+  , isValidPassword
       -- * Types
   , Email
   , VerificationToken
@@ -28,26 +28,26 @@ module Custom.Auth.Email
   , Identifier
   ) where
 
-import qualified Crypto.Hash                   as H
-import qualified Crypto.Nonce                  as Nonce
+import qualified Yesod.Auth.Util.PasswordStore as PS
 import qualified Custom.Auth.Message           as Msg
+import qualified Data.Text.Encoding            as TE
+import qualified Web.ClientSession             as CS
+import qualified Crypto.Nonce                  as Nonce
+import qualified Crypto.Hash                   as H
 import qualified Data.Text                     as TS
 import qualified Data.Text                     as T
-import qualified Data.Text.Encoding            as TE
-import qualified Yesod.Auth.Util.PasswordStore as PS
-import qualified Web.ClientSession             as CS
 import qualified Text.Email.Validate
-import           Control.Applicative           ((<$>))
-import           Data.ByteArray                (convert)
-import           Data.ByteString.Base16        as B16
-import           Data.Text                     (Text)
-import           Data.Text.Encoding            (decodeUtf8With, encodeUtf8)
 import           Data.Text.Encoding.Error      (lenientDecode)
+import           Data.ByteString.Base16        as B16
+import           Control.Applicative           ((<$>))
+import           Data.Text.Encoding            (decodeUtf8With, encodeUtf8)
 import           System.IO.Unsafe              (unsafePerformIO)
 import           Data.Aeson.Types              (Parser, Result (..), parseEither, withObject)
+import           Data.ByteArray                (convert)
+import           Data.Text                     (Text)
+import           Network.HTTP.Types.URI
 import           Custom.Auth
 import           Yesod.Core
-import           Network.HTTP.Types.URI
 
 -- | The email verification AuthRoute
 emailVerificationR :: Text -> Text -> AuthRoute
@@ -101,10 +101,10 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   setVerificationToken :: AuthEmailId site -> VerificationToken -> AuthHandler site ()
   
   hashAndSaltPassword :: Text -> AuthHandler site SaltedPassword
-  hashAndSaltPassword = liftIO . saltPass
+  hashAndSaltPassword = liftIO . saltPassword
   
   verifyPassword :: Text -> SaltedPassword -> AuthHandler site Bool
-  verifyPassword plain salted = return $ isValidPass plain salted
+  verifyPassword plain salted = return $ isValidPassword plain salted
   
   -- | Verify the email address on the given account.
   --
@@ -135,8 +135,8 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   -- | Check that the given plain-text password meets minimum security standards.
   --
   -- Default: password is at least three characters.
-  checkPasswordSecurity :: AuthId site -> Text -> AuthHandler site (Either Text ())
-  checkPasswordSecurity _ x
+  checkPasswordSecurity :: Text -> AuthHandler site (Either Text ())
+  checkPasswordSecurity x
     | TS.length x >= 3 = return $ Right ()
     | otherwise = return $ Left "Password must be at least three characters"
 
@@ -258,11 +258,18 @@ registerHelper forgotPassword = do
           Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
           Nothing -- The user has not been registered yet
            -> do
-            key <- liftIO $ randomKey y
-            lid <-
-              do salted <- hashAndSaltPassword password
-                 addUnverifiedWithPassword email key salted
-            return $ Just (lid, False, key, email)
+            isSecure <- checkPasswordSecurity password
+            $(logInfo) $ T.pack $ show isSecure
+            case isSecure of
+              Left e -> do
+                $(logError) e
+                return Nothing
+              Right () -> do
+                key <- liftIO $ randomKey y
+                lid <-
+                  do salted <- hashAndSaltPassword password
+                     addUnverifiedWithPassword email key salted
+                return $ Just (lid, False, key, email)
           _ -> do
             $(logError) $ messageRender $ Msg.UserRowNotInValidState email
             return Nothing
@@ -562,7 +569,7 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                     $(logError) $ (T.pack "Unable to parse path piece ") `T.append` userId
                     provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` userId
                   Just userId' -> do
-                    isSecure <- checkPasswordSecurity userId' newPassword
+                    isSecure <- checkPasswordSecurity newPassword
                     case isSecure of
                       Left e -> do
                         $(logError) e
@@ -592,27 +599,27 @@ saltLength :: Int
 saltLength = 5
 
 -- | Salt a password with a randomly generated salt.
-saltPass :: Text -> IO Text
-saltPass = fmap (decodeUtf8With lenientDecode) . flip PS.makePassword 16 . encodeUtf8
+saltPassword :: Text -> IO Text
+saltPassword = fmap (decodeUtf8With lenientDecode) . flip PS.makePassword 16 . encodeUtf8
 
-saltPass' :: String -> String -> String
-saltPass' salt pass =
+saltPassword' :: String -> String -> String
+saltPassword' salt pass =
   salt ++
   T.unpack (TE.decodeUtf8 $ B16.encode $ convert (H.hash (TE.encodeUtf8 $ T.pack $ salt ++ pass) :: H.Digest H.MD5))
 
-isValidPass ::
+isValidPassword ::
      Text -- ^ cleartext password
   -> SaltedPassword -- ^ salted password
   -> Bool
-isValidPass ct salted = PS.verifyPassword (encodeUtf8 ct) (encodeUtf8 salted) || isValidPass' ct salted
+isValidPassword ct salted = PS.verifyPassword (encodeUtf8 ct) (encodeUtf8 salted) || isValidPassword' ct salted
 
-isValidPass' ::
+isValidPassword' ::
      Text -- ^ cleartext password
   -> SaltedPassword -- ^ salted password
   -> Bool
-isValidPass' clear' salted' =
+isValidPassword' clear' salted' =
   let salt = take saltLength salted
-   in salted == saltPass' salt clear
+   in salted == saltPassword' salt clear
   where
     clear = TS.unpack clear'
     salted = TS.unpack salted'
