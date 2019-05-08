@@ -46,6 +46,7 @@ import           Data.Aeson.Types              (Parser, Result (..), parseEither
 import           Data.ByteArray                (convert)
 import           Data.Text                     (Text)
 import           Network.HTTP.Types.URI
+import           Data.Time.Clock
 import           Custom.Auth
 import           Yesod.Core
 
@@ -87,10 +88,10 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   
   type AuthEmailId site
   
-  addUnverified :: Email -> VerificationToken -> AuthHandler site (AuthEmailId site)
+  addUnverified :: Email -> VerificationToken -> UTCTime -> AuthHandler site (AuthEmailId site)
   
-  addUnverifiedWithPassword :: Email -> VerificationToken -> SaltedPassword -> AuthHandler site (AuthEmailId site)
-  addUnverifiedWithPassword email verificationToken _ = addUnverified email verificationToken
+  addUnverifiedWithPassword :: Email -> VerificationToken -> UTCTime -> SaltedPassword -> AuthHandler site (AuthEmailId site)
+  addUnverifiedWithPassword email verificationToken tokenExpiresAt _ = addUnverified email verificationToken tokenExpiresAt
   
   sendVerifyEmail :: Email -> VerificationToken -> VerificationUrl -> AuthHandler site ()
   
@@ -255,28 +256,35 @@ registerHelper forgotPassword = do
       mecreds <- getEmailCreds email
       registerCreds <-
         case mecreds of
-          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
+          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Right (lid, verStatus, key, email')
           Nothing -- The user has not been registered yet
            -> do
             isSecure <- checkPasswordSecurity password
             $(logInfo) $ T.pack $ show isSecure
             case isSecure of
-              Left e -> do
-                $(logError) e
-                return Nothing
+              Left errorMessage -> do
+                $(logError) errorMessage
+                return $ Left (errorMessage, True)
               Right () -> do
                 key <- liftIO $ randomKey y
+                now <- liftIO getCurrentTime
+                let tokenExpiresAt = addUTCTime nominalDay now
                 lid <-
                   do salted <- hashAndSaltPassword password
-                     addUnverifiedWithPassword email key salted
-                return $ Just (lid, False, key, email)
+                     addUnverifiedWithPassword email key tokenExpiresAt salted
+                return $ Right (lid, False, key, email)
           _ -> do
-            $(logError) $ messageRender $ Msg.UserRowNotInValidState email
-            return Nothing
+            let errorMessage = messageRender $ Msg.UserRowNotInValidState email
+            $(logError) errorMessage
+            return $ Left (errorMessage, False)
       case registerCreds of
-        Just creds1@(_, False, _, _) -> sendConfirmationEmail creds1
-        Just (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
-        _ -> loginErrorMessageI Msg.RegistrationFailure
+        Right creds1@(_, False, _, _) -> sendConfirmationEmail creds1
+        Right (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
+        Left (errorMessage, propagateInternalErrorMessage) ->
+          if propagateInternalErrorMessage then
+            provideJsonMessage errorMessage
+          else
+            loginErrorMessageI Msg.RegistrationFailure
       where sendConfirmationEmail (lid, _, verificationToken, email') = do
               render <- getUrlRender
               tp <- getRouteToParent

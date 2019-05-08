@@ -118,7 +118,8 @@ instance YesodAuth App where
 
     -- Need to find the UserId for the given email address.
     authenticate creds = liftHandler $ runDB $ do
-        x <- insertBy $ User (credsIdent creds) Nothing Nothing False
+        now <- liftIO getCurrentTime
+        x <- insertBy $ User (credsIdent creds) Nothing Nothing now False
         return $ Authenticated $
             case x of
                 Left (Entity userid _) -> userid -- newly added user
@@ -128,11 +129,11 @@ instance YesodAuth App where
 instance YesodAuthEmail App where
     type AuthEmailId App = UserId
 
-    addUnverified email verificationToken =
-        liftHandler $ runDB $ insert $ User email Nothing (Just verificationToken) False
+    addUnverified email verificationToken tokenExpiresAt =
+        liftHandler $ runDB $ insert $ User email Nothing (Just verificationToken) tokenExpiresAt False
 
-    addUnverifiedWithPassword email verificationToken saltedPassword =
-      liftHandler $ runDB $ insert $ User email (Just saltedPassword) (Just verificationToken) False
+    addUnverifiedWithPassword email verificationToken tokenExpiresAt saltedPassword =
+      liftHandler $ runDB $ insert $ User email (Just saltedPassword) (Just verificationToken) tokenExpiresAt False
 
     sendVerifyEmail email _ verificationUrl = do
         $(logInfo) $ pack $ "Copy/ Paste this URL in your browser:" ++ unpack verificationUrl

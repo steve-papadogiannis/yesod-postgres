@@ -2,6 +2,7 @@ User json
     email Text
     password Text Maybe -- Password may not be set yet
     verkey Text Maybe -- Used for resetting passwords
+    tokenExpiresAt UTCTime default=CURRENT_TIMESTAMP
     verified Bool
     UniqueUser email
     deriving Typeable
