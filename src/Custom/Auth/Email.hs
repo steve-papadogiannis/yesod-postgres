@@ -264,7 +264,7 @@ registerHelper forgotPassword = do
             case isSecure of
               Left errorMessage -> do
                 $(logError) errorMessage
-                return $ Left (errorMessage, True)
+                return $ Left errorMessage
               Right () -> do
                 key <- liftIO $ randomKey y
                 now <- liftIO getCurrentTime
@@ -274,17 +274,12 @@ registerHelper forgotPassword = do
                      addUnverifiedWithPassword email key tokenExpiresAt salted
                 return $ Right (lid, False, key, email)
           _ -> do
-            let errorMessage = messageRender $ Msg.UserRowNotInValidState email
-            $(logError) errorMessage
-            return $ Left (errorMessage, False)
+            $(logError) $ messageRender $ Msg.UserRowNotInValidState email
+            return $ Left $ messageRender Msg.RegistrationFailure
       case registerCreds of
         Right creds1@(_, False, _, _) -> sendConfirmationEmail creds1
         Right (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
-        Left (errorMessage, propagateInternalErrorMessage) ->
-          if propagateInternalErrorMessage then
-            provideJsonMessage errorMessage
-          else
-            loginErrorMessageI Msg.RegistrationFailure
+        Left e -> provideJsonMessage e
       where sendConfirmationEmail (lid, _, verificationToken, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
