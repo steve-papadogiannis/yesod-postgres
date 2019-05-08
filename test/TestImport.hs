@@ -99,11 +99,13 @@ authenticateAs (Entity _ u) = do
 createUser :: Text -> YesodExample App (Entity User)
 createUser ident =
     runDB $ do
+      now <- liftIO getCurrentTime
       user <- insertEntity User
           { userEmail = ident
           , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
           , userVerified = True
           , userVerkey = Just ("a" :: Text)
+          , userTokenExpiresAt = now
           }
       _ <- insert Email
           { emailEmail = ident

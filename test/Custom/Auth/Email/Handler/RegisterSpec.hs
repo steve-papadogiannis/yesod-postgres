@@ -7,26 +7,27 @@ import TestImport
 
 spec :: Spec
 spec = withApp $ do
-  describe "Get request to CheckR without authenticated user" $
-    it "gives a 200 and the body contains \"logged_in\":false" $ do
+  describe "Post request to http://localhost:3000/auth/plugin/email/register" $
+    it "gives a 200 and the body contains \"message\":\"Password must be at least three characters\"" $ do
       get ("http://localhost:3000/auth/check" :: Text)
       statusIs 200
 
-      bodyContains "\"logged_in\":false"
-  describe "Get request to CheckR with authenticated user" $
-    it "gives a 200 and the body contains \"logged_in\":true" $ do
+      let email = "example@gmail.com" :: Text
+          password = "pa" :: Text
+          body = object [ "email" .= email, "password" .= password ]
+          encoded = encode body
 
-      userEntity <- createUser "steve.papadogiannis@gmail.com"
-      authenticateAs userEntity
+      request $ do
+        setMethod "POST"
+        setUrl $ AuthR $ PluginR "email" ["register"]
+        setRequestBody encoded
+        addRequestHeader ("Content-Type", "application/json")
+        addTokenFromCookie
 
-      get ("http://localhost:3000/auth/check" :: Text)
       statusIs 200
+      bodyContains "\"message\":\"Password must be at least three characters\""
 
-      bodyContains "\"logged_in\":true"
-
-      assertHeaderWithoutValue "Set-Cookie"
-
-  describe "Post request to CheckR" $
-    it "gives a 405 Method not Allowed" $ do
-      post ("http://localhost:3000/auth/check" :: Text)
-      statusIs 405
+  describe "Get request to http://localhost:3000/auth/plugin/email/register" $
+    it "gives a 404 Not Found" $ do
+      get ("http://localhost:3000/auth/plugin/email/register" :: Text)
+      statusIs 404
