@@ -52,15 +52,15 @@ import           Yesod.Core
 
 -- | The email verification AuthRoute
 emailVerificationR :: Text -> Text -> AuthRoute
-emailVerificationR userId verificationToken = PluginR "email" path
+emailVerificationR encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken = PluginR "email" path
   where
-    path = "verify" : userId : [verificationToken]
+    path = "verify" : encryptedAndUrlEncodedUserId : [encryptedAndUrlEncodedVerificationToken]
 
 -- | The reset password AuthRoute
 resetPasswordR :: Text -> Text -> AuthRoute
-resetPasswordR encryptedUserId verificationToken = PluginR "email" path
+resetPasswordR encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken = PluginR "email" path
   where
-    path = "reset-password" : encryptedUserId : [verificationToken]
+    path = "reset-password" : encryptedAndUrlEncodedUserId : [encryptedAndUrlEncodedVerificationToken]
 
 type Email = Text
 
@@ -75,11 +75,12 @@ type VerificationStatus = Bool
 type Identifier = Text
 
 data EmailCreds site = EmailCreds
-  { emailCredsId     :: AuthEmailId site
-  , emailCredsAuthId :: Maybe (AuthId site)
-  , emailCredsStatus :: VerificationStatus
-  , emailCredsVerkey :: Maybe VerificationToken
-  , emailCredsEmail  :: Email
+  { emailCredsId             :: AuthEmailId site
+  , emailCredsAuthId         :: Maybe (AuthId site)
+  , emailCredsStatus         :: VerificationStatus
+  , emailCredsVerkey         :: Maybe VerificationToken
+  , emailCredsTokenExpiresAt :: UTCTime
+  , emailCredsEmail          :: Email
   }
 
 class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.AuthMessage), Show (AuthEmailId site)) =>
@@ -121,6 +122,9 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
 
   -- | Set the salted password for the given account.
   setPassword :: AuthId site -> SaltedPassword -> AuthHandler site ()
+
+  -- | Set the new token expires at timestamp for the given account
+  renewTokenExpiresAt :: AuthEmailId site -> UTCTime -> AuthHandler site ()
 
   -- | Get the credentials for the given @Identifier@, which may be either an
   -- email address or some other identification (e.g., username).
@@ -182,7 +186,7 @@ authEmail = AuthPlugin "email" dispatch
 encryptAndUrlEncode :: YesodAuthEmail master => Text -> AuthHandler master Text
 encryptAndUrlEncode value = do
   key <- liftIO $ CS.getKey "config/client_session_key.aes"
-  iv <- liftIO $ CS.randomIV
+  iv <- liftIO CS.randomIV
   return $ TE.decodeUtf8 $ urlEncode True $ CS.encrypt key iv (encodeUtf8 value)
 
 registerHelper ::
@@ -234,8 +238,7 @@ registerHelper forgotPassword = do
       RegisterCreds email password
         | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -- canonicalize email
          -> do
-          let loginRegisterCreds =
-                RegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
+          let loginRegisterCreds = RegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
           $(logInfo) $ T.pack $ show loginRegisterCreds
           return $ Right loginRegisterCreds
         | otherwise -- or return error message that the value entered as email is not one
@@ -256,7 +259,7 @@ registerHelper forgotPassword = do
       mecreds <- getEmailCreds email
       registerCreds <-
         case mecreds of
-          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Right (lid, verStatus, key, email')
+          Just (EmailCreds lid _ verStatus (Just key) tokenExpiresAt email') -> return $ Right (lid, verStatus, key, tokenExpiresAt, email')
           Nothing -- The user has not been registered yet
            -> do
             isSecure <- checkPasswordSecurity password
@@ -272,15 +275,15 @@ registerHelper forgotPassword = do
                 lid <-
                   do salted <- hashAndSaltPassword password
                      addUnverifiedWithPassword email key tokenExpiresAt salted
-                return $ Right (lid, False, key, email)
+                return $ Right (lid, False, key, tokenExpiresAt, email)
           _ -> do
             $(logError) $ messageRender $ Msg.UserRowNotInValidState email
             return $ Left $ messageRender Msg.RegistrationFailure
       case registerCreds of
-        Right creds1@(_, False, _, _) -> sendConfirmationEmail creds1
-        Right (_, True, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
+        Right creds1@(_, False, _, _, _) -> sendConfirmationEmail creds1
+        Right (_, True, _, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
         Left e -> provideJsonMessage e
-      where sendConfirmationEmail (lid, _, verificationToken, email') = do
+      where sendConfirmationEmail (lid, _, verificationToken, _, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
               encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ lid
@@ -292,7 +295,7 @@ registerHelper forgotPassword = do
       mecreds <- getEmailCreds email
       registerCreds <-
         case mecreds of
-          Just (EmailCreds lid _ verStatus (Just key) email') -> return $ Just (lid, verStatus, key, email')
+          Just (EmailCreds lid _ verStatus (Just key) _ email') -> return $ Just (lid, verStatus, key, email')
           Nothing -> do
             $(logError) $ messageRender $ Msg.NoSuchUser email
             return Nothing
@@ -305,6 +308,9 @@ registerHelper forgotPassword = do
       where sendResetPasswordEmailHandler (authId, _, verificationToken, email') = do
               render <- getUrlRender
               tp <- getRouteToParent
+              now <- liftIO getCurrentTime
+              let tokenExpiresAt = addUTCTime nominalDay now
+              renewTokenExpiresAt authId tokenExpiresAt
               encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ authId
               encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode verificationToken
               let verificationUrl = render $ tp $ resetPasswordR encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
@@ -324,8 +330,7 @@ decryptAndUrlDecode :: YesodAuthEmail master => Text -> AuthHandler master (Mayb
 decryptAndUrlDecode value = do
   key <- liftIO $ CS.getKey "config/client_session_key.aes"
   let maybeUserId = CS.decrypt key $ urlDecode True $ encodeUtf8 value
-  return $ maybeUserId >>= (\userId ->
-    Just $ TE.decodeUtf8 userId)
+  return $ maybeUserId >>= Just . TE.decodeUtf8
 
 getEmailVerificationR :: YesodAuthEmail site => Text -> Text -> AuthHandler site Value
 getEmailVerificationR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToken = do

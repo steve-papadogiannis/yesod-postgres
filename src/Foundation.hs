@@ -233,6 +233,8 @@ instance YesodAuthEmail App where
 
     setPassword uid pass = liftHandler . runDB $ update uid [UserPassword =. Just pass]
 
+    renewTokenExpiresAt userId newTokenExpiresAt = liftHandler . runDB $ update userId [UserTokenExpiresAt =. newTokenExpiresAt]
+
     getEmailCreds email = liftHandler $ runDB $ do
         mu <- getBy $ UniqueUser email
         case mu of
@@ -242,6 +244,7 @@ instance YesodAuthEmail App where
                 , emailCredsAuthId = Just uid
                 , emailCredsStatus = userVerified u
                 , emailCredsVerkey = userVerkey u
+                , emailCredsTokenExpiresAt = userTokenExpiresAt u
                 , emailCredsEmail = email
                 }
 
