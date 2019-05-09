@@ -99,6 +99,8 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   sendResetPasswordEmail :: Email -> VerificationToken -> VerificationUrl -> AuthHandler site ()
   
   getVerificationToken :: AuthId site -> AuthHandler site (Maybe VerificationToken)
+
+  getTokenExpiresAt :: AuthId site -> AuthHandler site (Maybe UTCTime)
   
   setVerificationToken :: AuthEmailId site -> VerificationToken -> AuthHandler site ()
   
@@ -138,8 +140,6 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
   randomKey _ = Nonce.nonce128urlT defaultNonceGen
 
   -- | Check that the given plain-text password meets minimum security standards.
-  --
-  -- Default: password is at least three characters.
   checkPasswordSecurity :: Text -> AuthHandler site (Either Text ())
   checkPasswordSecurity x
     | TS.length x >= 3 = return $ Right ()
@@ -162,8 +162,6 @@ class (YesodAuth site, PathPiece (AuthEmailId site), (RenderMessage site Msg.Aut
       msg = Msg.ResetPasswordEmailSent identifier
 
   -- | Additional normalization of email addresses, besides standard canonicalization.
-  --
-  -- Default: Lower case the email address.
   normalizeEmailAddress :: site -> Text -> Text
   normalizeEmailAddress _ = TS.toLower
 
@@ -237,14 +235,14 @@ registerHelper forgotPassword = do
         return $ Left Msg.MissingPasswordMessage
       RegisterCreds email password
         | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -- canonicalize email
-         -> do
-          let loginRegisterCreds = RegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
-          $(logInfo) $ T.pack $ show loginRegisterCreds
-          return $ Right loginRegisterCreds
+          -> do
+            let loginRegisterCreds = RegisterCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email') password
+            $(logInfo) $ T.pack $ show loginRegisterCreds
+            return $ Right loginRegisterCreds
         | otherwise -- or return error message that the value entered as email is not one
-         -> do
-          $(logError) $ messageRender Msg.InvalidEmailAddress
-          return $ Left Msg.InvalidEmailAddress
+          -> do
+            $(logError) $ messageRender Msg.InvalidEmailAddress
+            return $ Left Msg.InvalidEmailAddress
       ForgotPasswordCreds email
         | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
           let forgotPasswordCreds = ForgotPasswordCreds (normalizeEmailAddress y $ decodeUtf8With lenientDecode email')
@@ -348,17 +346,28 @@ getEmailVerificationR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationT
           $(logError) $ (T.pack "Unable to parse path piece ") `T.append` userId
           provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` userId
         Just userId' -> do
+          now <- liftIO getCurrentTime
           realKey <- getVerificationToken userId'
           memail <- getEmail userId'
           case (realKey == maybeVerificationToken, memail) of
             (True, Just email) -> do
-              muid <- verifyAccount userId'
-              case muid of
-                Nothing -> invalidKey messageRender
-                Just _ -> do
-                  setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
-                  let msgAv = Msg.AddressVerified
-                  provideJsonMessage $ messageRender msgAv
+              maybeStoredTokenExpiresAt <- getTokenExpiresAt userId'
+              case maybeStoredTokenExpiresAt of
+                Just storedTokenExpiresAt -> do
+                  if now > storedTokenExpiresAt then do
+                    $(logError) $ messageRender $ Msg.VerificationTokenExpiredAtInternal (T.pack $ show userId') storedTokenExpiresAt
+                    provideJsonMessage $ messageRender Msg.VerificationTokenExpired
+                  else do
+                    muid <- verifyAccount userId'
+                    case muid of
+                      Nothing -> invalidKey messageRender
+                      Just _ -> do
+                        setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
+                        let msgAv = Msg.AddressVerified
+                        provideJsonMessage $ messageRender msgAv
+                Nothing -> do
+                  $(logError) $ messageRender $ Msg.UserRowNotInValidState (T.pack $ show userId)
+                  provideJsonMessage $ messageRender Msg.VerificationFailure
             _ -> invalidKey messageRender
           where
             msgIk = Msg.InvalidKey
@@ -587,11 +596,22 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                         case (storedVerificationKey, verificationToken) of
                           (Just value, vk)
                             | value == vk -> do
-                              salted <- hashAndSaltPassword newPassword
-                              $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
-                              setPassword userId' salted
-                              $(logInfo) $ T.pack $ "New password updated for user with userId " ++ show userId
-                              messageJson200 $ messageRender Msg.PassUpdated
+                              maybeStoredTokenExpiresAt <- getTokenExpiresAt userId'
+                              case maybeStoredTokenExpiresAt of
+                                Just storedTokenExpiresAt -> do
+                                  now <- liftIO getCurrentTime
+                                  if now > storedTokenExpiresAt then do
+                                    $(logError) $ messageRender $ Msg.VerificationTokenExpiredAtInternal (T.pack $ show userId') storedTokenExpiresAt
+                                    provideJsonMessage $ messageRender Msg.VerificationTokenExpired
+                                  else do
+                                    salted <- hashAndSaltPassword newPassword
+                                    $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
+                                    setPassword userId' salted
+                                    $(logInfo) $ T.pack $ "New password updated for user with userId " ++ show userId
+                                    messageJson200 $ messageRender Msg.PassUpdated
+                                Nothing -> do
+                                   $(logError) $ messageRender $ Msg.UserRowNotInValidState (T.pack $ show userId)
+                                   provideJsonMessage $ messageRender Msg.ResetPasswordFailure
                             | otherwise -> do
                               $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
                                 vk value
@@ -611,9 +631,7 @@ saltPassword :: Text -> IO Text
 saltPassword = fmap (decodeUtf8With lenientDecode) . flip PS.makePassword 16 . encodeUtf8
 
 saltPassword' :: String -> String -> String
-saltPassword' salt pass =
-  salt ++
-  T.unpack (TE.decodeUtf8 $ B16.encode $ convert (H.hash (TE.encodeUtf8 $ T.pack $ salt ++ pass) :: H.Digest H.MD5))
+saltPassword' salt pass = salt ++ T.unpack (TE.decodeUtf8 $ B16.encode $ convert (H.hash (TE.encodeUtf8 $ T.pack $ salt ++ pass) :: H.Digest H.MD5))
 
 isValidPassword ::
      Text -- ^ cleartext password

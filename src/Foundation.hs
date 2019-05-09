@@ -219,6 +219,8 @@ instance YesodAuthEmail App where
 
     getVerificationToken = liftHandler . runDB . fmap (join . fmap userVerkey) . get
 
+    getTokenExpiresAt = liftHandler . runDB . fmap (fmap userTokenExpiresAt) . get
+
     setVerificationToken userId verificationToken = liftHandler $ runDB $ update userId [UserVerkey =. Just verificationToken]
 
     verifyAccount uid = liftHandler $ runDB $ do

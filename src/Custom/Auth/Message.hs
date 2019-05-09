@@ -6,8 +6,9 @@ module Custom.Auth.Message
   , englishMessage
   ) where
 
-import           Data.Monoid (mappend)
-import           Data.Text   (Text)
+import Data.Monoid     (mappend)
+import Data.Text       (Text, pack)
+import Data.Time.Clock
 
 data AuthMessage
   = NoOpenID
@@ -75,6 +76,10 @@ data AuthMessage
   | MissingVerificationKeyInternalMessage Text Text
   | UnableToDecryptUserId Text
   | NoSuchUser Text
+  | VerificationTokenExpiredAtInternal Text UTCTime
+  | VerificationTokenExpired
+  | VerificationFailure
+  | ResetPasswordFailure
 
 {-# DEPRECATED
 Logout "Please, use LogoutTitle instead."
@@ -97,8 +102,7 @@ englishMessage Register = "Register"
 englishMessage RegisterLong = "Register a new account"
 englishMessage EnterEmail = "Enter your e-mail address below, and a confirmation e-mail will be sent to you."
 englishMessage ConfirmationEmailSentTitle = "Confirmation e-mail sent"
-englishMessage (ConfirmationEmailSent email) =
-  "A confirmation e-mail has been sent to " `mappend` email `mappend` "."
+englishMessage (ConfirmationEmailSent email) = "A confirmation e-mail has been sent to " `mappend` email `mappend` "."
 englishMessage AddressVerified = "Address verified"
 englishMessage InvalidKeyTitle = "Invalid verification key"
 englishMessage InvalidKey = "I'm sorry, but that was an invalid verification key."
@@ -122,8 +126,7 @@ englishMessage InvalidEmailAddress = "Invalid email address provided"
 englishMessage PasswordResetTitle = "Password Reset"
 englishMessage ProvideIdentifier = "Email or Username"
 englishMessage SendPasswordResetEmail = "Send password reset email"
-englishMessage PasswordResetPrompt =
-  "Enter your e-mail address or username below, and a password reset e-mail will be sent to you."
+englishMessage PasswordResetPrompt = "Enter your e-mail address or username below, and a password reset e-mail will be sent to you."
 englishMessage InvalidUsernamePass = "Invalid username/password combination"
 englishMessage (IdentifierNotFound ident) = "Login not found: " `mappend` ident
 englishMessage Logout = "Log Out"
@@ -134,30 +137,27 @@ englishMessage MissingEmailMessage = "No email provided"
 englishMessage MissingPasswordMessage = "No password provided"
 englishMessage (AccountNotVerified email) = "Account for user " `mappend` email `mappend` " is not verified"
 englishMessage (PasswordNotSet email) = "Password is not set for user " `mappend` email
-englishMessage (PasswordMismatch email) =
-  "Password given mismatches with password stored in DB for user " `mappend` email
+englishMessage (PasswordMismatch email) = "Password given mismatches with password stored in DB for user " `mappend` email
 englishMessage (LoginFailureEmail email) = "Login for user " `mappend` email `mappend` " failed"
 englishMessage LoginFailure = "Login for user failed"
 englishMessage AlreadyRegistered = "This email is already registered"
 englishMessage (UserRowNotInValidState email) = "User row " `mappend` email `mappend` " not in valid state"
 englishMessage RegistrationFailure = "Registration was unsuccessful due to an internal error"
 englishMessage ForgotPasswordFailure = "Forgot Password request was unsuccessful due to an internal error"
-englishMessage (ResetPasswordEmailSent email) =
-  "A reset password e-mail has been sent to " `mappend` email `mappend` "."
-englishMessage (MissingNewPasswordInternalMessage userId) =
-  "Request body for /reset-password from user with userId " `mappend` userId `mappend` " did not contain newPassword field"
+englishMessage (ResetPasswordEmailSent email) = "A reset password e-mail has been sent to " `mappend` email `mappend` "."
+englishMessage (MissingNewPasswordInternalMessage userId) = "Request body for /reset-password from user with userId " `mappend` userId `mappend` " did not contain newPassword field"
 englishMessage MissingNewPasswordMessage = "No newPassword provided"
-englishMessage (MissingConfirmPasswordInternalMessage userId) =
-  "Request body for /reset-password from user with userId " `mappend` userId `mappend` " did not contain confirmPassword field"
+englishMessage (MissingConfirmPasswordInternalMessage userId) = "Request body for /reset-password from user with userId " `mappend` userId `mappend` " did not contain confirmPassword field"
 englishMessage MissingConfirmPasswordMessage = "No confirmPassword provided"
-englishMessage (PassMismatchInternalMessage userId) =
-  "Request body for /reset-password from user with userId " `mappend` userId `mappend` " contains different newPassword and confirmPassword fields"
-englishMessage (InvalidVerificationKeyInternalMessage userId verificationKey storedVerificationKey) =
-  "Invalid verification key. User with userId " `mappend` userId `mappend` " requested /set-password with verification key "
+englishMessage (PassMismatchInternalMessage userId) = "Request body for /reset-password from user with userId " `mappend` userId `mappend` " contains different newPassword and confirmPassword fields"
+englishMessage (InvalidVerificationKeyInternalMessage userId verificationKey storedVerificationKey) = "Invalid verification key. User with userId " `mappend` userId `mappend` " requested /set-password with verification key "
   `mappend` verificationKey `mappend` " but stored verification key was " `mappend` storedVerificationKey
 englishMessage InvalidVerificationKey = "Invalid verification key"
-englishMessage (MissingVerificationKeyInternalMessage userId verificationKey) =
-  "Invalid verification key. User with userId " `mappend` userId `mappend` " requested /set-password with verification key "
+englishMessage (MissingVerificationKeyInternalMessage userId verificationKey) = "Invalid verification key. User with userId " `mappend` userId `mappend` " requested /set-password with verification key "
   `mappend` verificationKey `mappend` " but stored verification key was not set"
 englishMessage (UnableToDecryptUserId encryptedUserId) = "Unable to decrypt " `mappend` encryptedUserId
 englishMessage (NoSuchUser email) = "No user with email " `mappend` email `mappend` " found"
+englishMessage (VerificationTokenExpiredAtInternal userId expiresAt) = "Verification token for user " `mappend` userId `mappend` " has expired at " `mappend` (pack $ show expiresAt)
+englishMessage (VerificationTokenExpired) = "Your verification link has expired. Please re-register your account"
+englishMessage VerificationFailure = "Email Verification was unsuccessful"
+englishMessage ResetPasswordFailure = "Resetting password was unsuccessful"
