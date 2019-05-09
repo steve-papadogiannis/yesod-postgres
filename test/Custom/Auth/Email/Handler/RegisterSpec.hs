@@ -14,21 +14,33 @@ spec = withApp $ do
          get ("http://localhost:3000/auth/check" :: Text)
          statusIs 200
 
+    let basicRequestBuilder encoded = do
+          setMethod "POST"
+          setUrl $ AuthR $ PluginR "email" ["register"]
+          setRequestBody encoded
+          addRequestHeader ("Content-Type", "application/json")
+
     let postRegisterR encoded =
+          request $ basicRequestBuilder encoded
+
+    let postRegisterRWithToken encoded =
           request $ do
-            setMethod "POST"
-            setUrl $ AuthR $ PluginR "email" ["register"]
-            setRequestBody encoded
-            addRequestHeader ("Content-Type", "application/json")
+            basicRequestBuilder encoded
             addTokenFromCookie
+
+    let email        = "example@gmail.com" :: Text
+        password     = "password"          :: Text
+        weakPassword = "pa"                :: Text
+        body         = object [ "email" .= email, "password" .= password ]
+        encoded      = encode body
 
     it "with malformed json request body gives a 200 and the response body contains \"message\":\"Malformed Credentials JSON\"" $ do
 
       getCheckR
 
-      let body = encodeUtf8 "{\"adsfasdf\":\"dfadfas\",}"
+      let malformedJson = encodeUtf8 "{\"adsfasdf\":\"dfadfas\",}"
 
-      postRegisterR body
+      postRegisterRWithToken malformedJson
 
       statusIs 200
       bodyContains "\"message\":\"Malformed Credentials JSON\""
@@ -37,10 +49,10 @@ spec = withApp $ do
 
       getCheckR
 
-      let body = emptyObject
-          encoded = encode body
+      let emptyBody = emptyObject
+          encodedEmptyBody = encode emptyBody
 
-      postRegisterR encoded
+      postRegisterRWithToken encodedEmptyBody
 
       statusIs 200
       bodyContains "\"message\":\"No email provided\""
@@ -49,11 +61,10 @@ spec = withApp $ do
 
       getCheckR
 
-      let email = "example@gmail.com" :: Text
-          body = object [ "email" .= email ]
-          encoded = encode body
+      let onlyEmail = object [ "email" .= email ]
+          onlyEmailEncoded = encode onlyEmail
 
-      postRegisterR encoded
+      postRegisterRWithToken onlyEmailEncoded
 
       statusIs 200
       bodyContains "\"message\":\"No password provided\""
@@ -62,11 +73,10 @@ spec = withApp $ do
 
       getCheckR
 
-      let password = "pa" :: Text
-          body = object [ "password" .= password ]
-          encoded = encode body
+      let onlyPassword = object [ "password" .= weakPassword ]
+          onlyPasswordEncoded = encode onlyPassword
 
-      postRegisterR encoded
+      postRegisterRWithToken onlyPasswordEncoded
 
       statusIs 200
       bodyContains "\"message\":\"No email provided\""
@@ -75,12 +85,10 @@ spec = withApp $ do
 
       getCheckR
 
-      let email = "example@gmail.com" :: Text
-          password = "pa" :: Text
-          body = object [ "email" .= email, "password" .= password ]
-          encoded = encode body
+      let weakBody = object [ "email" .= email, "password" .= weakPassword ]
+          weakBodyEncoded = encode weakBody
 
-      postRegisterR encoded
+      postRegisterRWithToken weakBodyEncoded
 
       statusIs 200
       bodyContains "\"message\":\"Password must be at least three characters\""
@@ -89,12 +97,11 @@ spec = withApp $ do
 
       getCheckR
 
-      let email = "examplegmail.com" :: Text
-          password = "password" :: Text
-          body = object [ "email" .= email, "password" .= password ]
-          encoded = encode body
+      let invalidEmail = "examplegmail.com" :: Text
+          invalidBody = object [ "email" .= invalidEmail, "password" .= weakPassword ]
+          invalidBodyEncoded = encode invalidBody
 
-      postRegisterR encoded
+      postRegisterRWithToken invalidBodyEncoded
 
       statusIs 200
       bodyContains "\"message\":\"Invalid email address provided\""
@@ -103,12 +110,7 @@ spec = withApp $ do
 
       getCheckR
 
-      let email = "example@gmail.com" :: Text
-          password = "password" :: Text
-          body = object [ "email" .= email, "password" .= password ]
-          encoded = encode body
-
-      postRegisterR encoded
+      postRegisterRWithToken encoded
 
       statusIs 200
       bodyContains "\"message\":\"A confirmation e-mail has been sent to example@gmail.com.\""
@@ -117,12 +119,11 @@ spec = withApp $ do
 
       getCheckR
 
-      let email = "EXAMPLE@gmail.com" :: Text
-          password = "password" :: Text
-          body = object [ "email" .= email, "password" .= password ]
-          encoded = encode body
+      let capitalizedEmail = "EXAMPLE@gmail.com" :: Text
+          bodyWithCapitalizedEmail = object [ "email" .= capitalizedEmail, "password" .= password ]
+          encodedBodyWithCapitalizedEmail = encode bodyWithCapitalizedEmail
 
-      postRegisterR encoded
+      postRegisterRWithToken encodedBodyWithCapitalizedEmail
 
       statusIs 200
       bodyContains "\"message\":\"A confirmation e-mail has been sent to example@gmail.com.\""
@@ -131,30 +132,16 @@ spec = withApp $ do
 
       getCheckR
 
-      let email = "example@gmail.com" :: Text
-          password = "password" :: Text
-          body = object [ "email" .= email, "password" .= password ]
-          encoded = encode body
-
       _ <- createUser ("example@gmail.com" :: Text)
 
-      postRegisterR encoded
+      postRegisterRWithToken encoded
 
       statusIs 200
       bodyContains "\"message\":\"This email is already registered\""
 
     it "with valid email and password gives a 403 and the body contains csrf text" $ do
 
-      let email = "example@gmail.com" :: Text
-          password = "password" :: Text
-          body = object [ "email" .= email, "password" .= password ]
-          encoded = encode body
-
-      request $ do
-        setMethod "POST"
-        setUrl $ AuthR $ PluginR "email" ["register"]
-        setRequestBody encoded
-        addRequestHeader ("Content-Type", "application/json")
+      postRegisterR encoded
 
       statusIs 403
       bodyContains $ "<!DOCTYPE html>\n" ++
