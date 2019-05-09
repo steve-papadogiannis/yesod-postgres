@@ -8,6 +8,37 @@ import TestImport
 spec :: Spec
 spec = withApp $ do
   describe "Post request to http://localhost:3000/auth/plugin/email/register" $ do
+    it "with malformed json request body gives a 200 and the response body contains \"message\":\"Malformed Credentials JSON\"" $ do
+      get ("http://localhost:3000/auth/check" :: Text)
+      statusIs 200
+
+      let body = encodeUtf8 "{\"adsfasdf\":\"dfadfas\",}"
+
+      request $ do
+        setMethod "POST"
+        setUrl $ AuthR $ PluginR "email" ["register"]
+        setRequestBody body
+        addRequestHeader ("Content-Type", "application/json")
+        addTokenFromCookie
+
+      statusIs 200
+      bodyContains "\"message\":\"Malformed Credentials JSON\""
+    it "with empty json request body gives a 200 and the response body contains \"message\":\"No email provided\"" $ do
+      get ("http://localhost:3000/auth/check" :: Text)
+      statusIs 200
+
+      let body = emptyObject
+          encoded = encode body
+
+      request $ do
+        setMethod "POST"
+        setUrl $ AuthR $ PluginR "email" ["register"]
+        setRequestBody encoded
+        addRequestHeader ("Content-Type", "application/json")
+        addTokenFromCookie
+
+      statusIs 200
+      bodyContains "\"message\":\"No email provided\""
     it "with only email in request body gives a 200 and the response body contains \"message\":\"No password provided\"" $ do
       get ("http://localhost:3000/auth/check" :: Text)
       statusIs 200
@@ -94,8 +125,8 @@ spec = withApp $ do
         addRequestHeader ("Content-Type", "application/json")
         addTokenFromCookie
 
-      statusIs 500
---      bodyContains "\"message\":\"A confirmation e-mail has been sent to example@gmail.com.\""
+      statusIs 200
+      bodyContains "\"message\":\"A confirmation e-mail has been sent to example@gmail.com.\""
     it "with capital containing email and password gives a 200 and the body contains \"message\":\"A confirmation e-mail has been sent to example@gmail.com.\"" $ do
       get ("http://localhost:3000/auth/check" :: Text)
       statusIs 200
@@ -112,8 +143,8 @@ spec = withApp $ do
         addRequestHeader ("Content-Type", "application/json")
         addTokenFromCookie
 
-      statusIs 500
---      bodyContains "\"message\":\"A confirmation e-mail has been sent to example@gmail.com.\""
+      statusIs 200
+      bodyContains "\"message\":\"A confirmation e-mail has been sent to example@gmail.com.\""
     it "with valid email and password and already registerd user with this email gives a 200 and the body contains \"message\":\"This email is already registered\"" $ do
       get ("http://localhost:3000/auth/check" :: Text)
       statusIs 200
@@ -123,7 +154,7 @@ spec = withApp $ do
           body = object [ "email" .= email, "password" .= password ]
           encoded = encode body
 
-      userEntity <- createUser ("example@gmail.com" :: Text)
+      _ <- createUser ("example@gmail.com" :: Text)
 
       request $ do
         setMethod "POST"

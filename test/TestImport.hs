@@ -19,6 +19,7 @@ import           Custom.Auth.Routes     as X
 import           Yesod.Core.Unsafe      (fakeHandlerGetLogger)
 import           Network.Wai.Test       hiding (assertHeader, assertNoHeader, request)
 import           Database.Persist       as X hiding (get)
+import           Data.Aeson.Types       as X
 import           ClassyPrelude          as X hiding (delete, deleteBy, Handler)
 import           Application            (makeFoundation, makeLogWare)
 import           Custom.Auth            as X
