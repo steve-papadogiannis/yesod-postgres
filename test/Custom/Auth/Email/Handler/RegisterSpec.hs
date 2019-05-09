@@ -134,7 +134,30 @@ spec = withApp $ do
 
       statusIs 200
       bodyContains "\"message\":\"This email is already registered\""  
-      
+    it "with valid email and password gives a 403 and the body contains csrf text" $ do
+      let email = "example@gmail.com" :: Text
+          password = "password" :: Text
+          body = object [ "email" .= email, "password" .= password ]
+          encoded = encode body
+
+      request $ do
+        setMethod "POST"
+        setUrl $ AuthR $ PluginR "email" ["register"]
+        setRequestBody encoded
+        addRequestHeader ("Content-Type", "application/json")
+
+      statusIs 403
+      bodyContains $ "<!DOCTYPE html>\n" ++
+                    "<html><head><title>Permission Denied</title></head><body><h1>Permission Denied</h1>\n" ++
+                    "<p>A valid CSRF token wasn&#39;t present. Because the request could have been forged, it&#39;s been rejected altogether.\n" ++
+                    "If you&#39;re a developer of this site, these tips will help you debug the issue:\n" ++
+                    "- Read the Yesod.Core.Handler docs of the yesod-core package for details on CSRF protection.\n" ++
+                    "- Check that your HTTP client is persisting cookies between requests, like a browser does.\n" ++
+                    "- By default, the CSRF token is sent to the client in a cookie named XSRF-TOKEN.\n" ++
+                    "- The server is looking for the token in the following locations:\n" ++
+                    "  - An HTTP header named X-XSRF-TOKEN (which is not currently set)\n" ++
+                    "  - A POST parameter named _token (which is not currently set)</p>\n" ++
+                    "</body></html>"
     
   describe "Get request to http://localhost:3000/auth/plugin/email/register" $
     it "gives a 404 Not Found" $ do
