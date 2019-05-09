@@ -1,6 +1,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+
 module TestImport
     ( module TestImport
     , module X
@@ -28,6 +29,7 @@ import           Data.Maybe             (fromJust)
 import           Data.Aeson             as X
 import           Model                  as X
 import           Network.HTTP.Types.URI
+import           Data.Time.Clock
 
 runDB :: SqlPersistM a -> YesodExample App a
 runDB query = do
@@ -105,7 +107,7 @@ createUser ident =
           , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
           , userVerified = True
           , userVerkey = Just ("a" :: Text)
-          , userTokenExpiresAt = now
+          , userTokenExpiresAt = addUTCTime nominalDay now
           }
       _ <- insert Email
           { emailEmail = ident

@@ -252,7 +252,7 @@ registerHelper forgotPassword = do
           $(logError) $ messageRender Msg.InvalidEmailAddress
           return $ Left Msg.InvalidEmailAddress
   case emailIdentifier of
-    Left message -> loginErrorMessageI message
+    Left message -> provideJsonMessage $ messageRender message
     Right (RegisterCreds email password) -> do
       mecreds <- getEmailCreds email
       registerCreds <-
@@ -279,7 +279,7 @@ registerHelper forgotPassword = do
             return $ Left $ messageRender Msg.RegistrationFailure
       case registerCreds of
         Right creds1@(_, False, _, _, _) -> sendConfirmationEmail creds1
-        Right (_, True, _, _, _) -> loginErrorMessageI Msg.AlreadyRegistered
+        Right (_, True, _, _, _) -> provideJsonMessage $ messageRender Msg.AlreadyRegistered
         Left e -> provideJsonMessage e
       where sendConfirmationEmail (lid, _, verificationToken, _, email') = do
               render <- getUrlRender
