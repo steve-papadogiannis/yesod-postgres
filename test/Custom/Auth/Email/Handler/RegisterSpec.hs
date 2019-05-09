@@ -114,6 +114,27 @@ spec = withApp $ do
 
       statusIs 200
       bodyContains "\"message\":\"A confirmation e-mail has been sent to example@gmail.com.\""
+    it "with valid email and password and already registerd user with this email gives a 200 and the body contains \"message\":\"This email is already registered\"" $ do
+      get ("http://localhost:3000/auth/check" :: Text)
+      statusIs 200
+
+      let email = "example@gmail.com" :: Text
+          password = "password" :: Text
+          body = object [ "email" .= email, "password" .= password ]
+          encoded = encode body
+
+      userEntity <- createUser ("example@gmail.com" :: Text)
+
+      request $ do
+        setMethod "POST"
+        setUrl $ AuthR $ PluginR "email" ["register"]
+        setRequestBody encoded
+        addRequestHeader ("Content-Type", "application/json")
+        addTokenFromCookie
+
+      statusIs 200
+      bodyContains "\"message\":\"This email is already registered\""  
+      
     
   describe "Get request to http://localhost:3000/auth/plugin/email/register" $
     it "gives a 404 Not Found" $ do
