@@ -281,14 +281,6 @@ registerHelper forgotPassword = do
         Right creds1@(_, False, _, _, _) -> sendConfirmationEmail creds1
         Right (_, True, _, _, _) -> provideJsonMessage $ messageRender Msg.AlreadyRegistered
         Left e -> provideJsonMessage e
-      where sendConfirmationEmail (lid, _, verificationToken, _, email') = do
-              render <- getUrlRender
-              tp <- getRouteToParent
-              encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ lid
-              encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode verificationToken
-              let verificationUrl = render $ tp $ emailVerificationR encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
-              sendVerifyEmail email' verificationToken verificationUrl
-              confirmationEmailSentResponse email'
     Right (ForgotPasswordCreds email) -> do
       mecreds <- getEmailCreds email
       registerCreds <-
@@ -302,21 +294,26 @@ registerHelper forgotPassword = do
             return Nothing
       case registerCreds of
         Nothing     -> loginErrorMessageI Msg.ForgotPasswordFailure
-        Just creds1 -> sendResetPasswordEmailHandler creds1
-      where sendResetPasswordEmailHandler (authId, _, verificationToken, email') = do
-              render <- getUrlRender
-              tp <- getRouteToParent
-              now <- liftIO getCurrentTime
-              let tokenExpiresAt = addUTCTime nominalDay now
-              renewTokenExpiresAt authId tokenExpiresAt
-              encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ authId
-              encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode verificationToken
-              let verificationUrl = render $ tp $ resetPasswordR encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
-              sendResetPasswordEmail email' verificationToken verificationUrl
-              resetPasswordEmailSentResponse email'
+        Just creds1 -> do
+          now <- liftIO getCurrentTime
+          let tokenExpiresAt = addUTCTime nominalDay now
+          renewTokenExpiresAt authId tokenExpiresAt
+          sendResetPasswordEmailHandler creds1
     _ -> do
       $(logError) $ T.pack "Invalid pattern match"
       loginErrorMessageI Msg.RegistrationFailure
+  where sendResetPasswordEmailHandler (authId, _, verificationToken, email') =
+          sendEmailHandler (authId, _, verificationToken, email') resetPasswordR sendResetPasswordEmail resetPasswordEmailSentResponse
+        sendConfirmationEmail (authId, _, verificationToken, _, email') =
+          sendEmailHandler (authId, _, verificationToken, _, email') emailVerificationR sendVerifyEmail confirmationEmailSentResponse
+        sendEmailHandler (authId, _, verificationToken, email') authRoute sendEmailFunction responseHandler = do
+          render <- getUrlRender
+          tp <- getRouteToParent
+          encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ authId
+          encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode verificationToken
+          let url = render $ tp $ authRoute encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+          sendEmailFunction email' verificationToken url
+          responseHandler email'
 
 postRegisterR :: YesodAuthEmail master => AuthHandler master Value
 postRegisterR = registerHelper False
