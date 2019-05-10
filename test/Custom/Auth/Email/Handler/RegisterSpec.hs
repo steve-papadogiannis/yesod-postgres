@@ -155,7 +155,26 @@ spec = withApp $ do
                     "  - An HTTP header named X-XSRF-TOKEN (which is not currently set)\n" ++
                     "  - A POST parameter named _token (which is not currently set)</p>\n" ++
                     "</body></html>"
-    
+
+    it "with valid email and password and invalid user in db gives a 200 and the body contains \"message\":\"User row example@gmail.com not in valid state\"" $ do
+
+      getCheckR
+
+      runDB $ do
+        now <- liftIO getCurrentTime
+        _ <- insertEntity User
+            { userEmail = email
+            , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
+            , userVerified = True
+            , userVerkey = Nothing
+            , userTokenExpiresAt = addUTCTime nominalDay now
+            }
+
+      postRegisterRWithToken encoded
+
+      statusIs 200
+      bodyContains "\"message\":\"User row example@gmail.com not in valid state\""
+
   describe "Get request to http://localhost:3000/auth/plugin/email/register" $
 
     it "gives a 404 Not Found" $ do
