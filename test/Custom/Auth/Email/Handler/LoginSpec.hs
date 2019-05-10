@@ -4,31 +4,30 @@
 module Custom.Auth.Email.Handler.LoginSpec (spec) where
 
 import TestImport
-import Data.Aeson
-import           Database.Persist.Sql
-import qualified Data.Text                  as T
 
 spec :: Spec
-spec = withApp $ do
-    describe "Post request to http://localhost:3000/auth/plugin/email/login" $
-        it "gives a 200 and the body contains \"message\":\"Login successful\"" $ do
+spec = withApp $
 
-          let email = "steve.papadogiannis1992@gmail.com" :: Text
-              password = "kurwa" :: Text
-              body = object [ "email" .= email, "password" .= password ]
-              encoded = encode body
+  describe "Post request to http://localhost:3000/auth/plugin/email/login" $
 
-          userEntity <- createUser email
-          let (Entity _id user) = userEntity
+    it "gives a 200 and the body contains \"message\":\"Login successful\"" $ do
 
-          request $ do
-            setMethod "POST"
-            setUrl $ AuthR $ PluginR "email" ["login"]
-            setRequestBody encoded
-            addRequestHeader ("Content-Type", "application/json")
+      let email = "steve.papadogiannis1992@gmail.com" :: Text
+          password = "kurwa" :: Text
+          body = object [ "email" .= email, "password" .= password ]
+          encoded = encode body
 
-          statusIs 200
+      userEntity <- createUser email
+      let (Entity _id _) = userEntity
+
+      request $ do
+        setMethod "POST"
+        setUrl $ AuthR $ PluginR "email" ["login"]
+        setRequestBody encoded
+        addRequestHeader ("Content-Type", "application/json")
+
+      statusIs 200
 
 --            [Entity _id user] <- runDB $ selectList [UserVerkey ==. Just "a"] []
 --            assertEq "Should have " comment (Comment message Nothing)
-          bodyContains "\"message\":\"Login Successful\""
+      bodyContains "\"message\":\"Login Successful\""

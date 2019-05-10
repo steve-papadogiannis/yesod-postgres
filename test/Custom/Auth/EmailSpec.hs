@@ -3,36 +3,37 @@
 
 module Custom.Auth.EmailSpec (spec) where
 
-import TestImport
-import Data.Aeson
-import           Database.Persist.Sql
 import qualified Data.Text                  as T
+import           Database.Persist.Sql
+import           TestImport
 
 spec :: Spec
-spec = withApp $ do
-    describe "Post request to SetPasswordR" $
-        it "gives a 200 and the body contains \"message\":\"Password updated\"" $ do
+spec = withApp $
 
-          userEntity <- createUser "steve.papadogiannis1992@gmail.com"
-          let (Entity _id user) = userEntity
+  describe "Post request to SetPasswordR" $
 
-          let newPassword = "newPassword" :: Text
-              confirmPassword = "newPassword" :: Text
-              body = object [ "new" .= newPassword, "confirm" .= confirmPassword ]
-              encoded = encode body
-              id = T.pack . show . unSqlBackendKey . unUserKey $ _id
+    it "gives a 200 and the body contains \"message\":\"Password updated\"" $ do
 
-          encryptedAndUrlEncodedUserId <- encryptAndUrlEncode id
-          encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      userEntity <- createUser "steve.papadogiannis1992@gmail.com"
+      let (Entity _id _) = userEntity
 
-          request $ do
-            setMethod "POST"
-            setUrl $ AuthR $ PluginR "email" ["reset-password", encryptedAndUrlEncodedUserId, encryptedAndUrlEncodedVerificationToken]
-            setRequestBody encoded
-            addRequestHeader ("Content-Type", "application/json")
+      let newPassword = "newPassword" :: Text
+          confirmPassword = "newPassword" :: Text
+          body = object [ "new" .= newPassword, "confirm" .= confirmPassword ]
+          encoded = encode body
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-          statusIs 200
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      request $ do
+        setMethod "POST"
+        setUrl $ AuthR $ PluginR "email" ["reset-password", encryptedAndUrlEncodedUserId, encryptedAndUrlEncodedVerificationToken]
+        setRequestBody encoded
+        addRequestHeader ("Content-Type", "application/json")
+
+      statusIs 200
 
 --            [Entity _id user] <- runDB $ selectList [UserVerkey ==. Just "a"] []
 --            assertEq "Should have " comment (Comment message Nothing)
-          bodyContains "\"message\":\"Password updated\""
+      bodyContains "\"message\":\"Password updated\""

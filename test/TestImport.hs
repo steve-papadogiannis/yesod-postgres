@@ -26,7 +26,6 @@ import           Custom.Auth            as X
 import           Foundation             as X
 import           Test.Hspec             as X
 import           Yesod.Test             as X
-import           Data.Maybe             (fromJust)
 import           Data.Aeson             as X
 import           Model                  as X
 import           Network.HTTP.Types.URI
@@ -120,7 +119,7 @@ createUser ident =
 encryptAndUrlEncode :: Text -> YesodExample App Text
 encryptAndUrlEncode value = do
   key <- liftIO $ CS.getKey "config/client_session_key.aes"
-  iv <- liftIO $ CS.randomIV
+  iv <- liftIO CS.randomIV
   return $ X.decodeUtf8 $ urlEncode True $ CS.encrypt key iv (encodeUtf8 value)
 
 -- | Assert the given header was returned.
@@ -132,7 +131,7 @@ assertHeaderWithoutValue header = withResponse $ \ SResponse { simpleHeaders = h
         , show header
         , ", but it was not present"
         ]
-    Just value -> return ()
+    Just _ -> return ()
 
 -- Yes, just a shortcut
 failure :: (MonadIO a) => T.Text -> a b

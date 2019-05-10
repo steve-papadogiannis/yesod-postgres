@@ -118,12 +118,12 @@ instance YesodAuth App where
 
     -- Need to find the UserId for the given email address.
     authenticate creds = liftHandler $ runDB $ do
-        now <- liftIO getCurrentTime
-        x <- insertBy $ User (credsIdent creds) Nothing Nothing now False
-        return $ Authenticated $
-            case x of
-                Left (Entity userid _) -> userid -- newly added user
-                Right userid -> userid -- existing user
+      now <- liftIO getCurrentTime
+      eitherUserId <- insertBy $ User (credsIdent creds) Nothing Nothing now False
+      return $ Authenticated $
+        case eitherUserId of
+          Left (Entity userId _) -> userId -- newly added user
+          Right userId           -> userId -- existing user
 
 -- Here's all of the email-specific code
 instance YesodAuthEmail App where
@@ -238,15 +238,15 @@ instance YesodAuthEmail App where
     renewTokenExpiresAt userId newTokenExpiresAt = liftHandler . runDB $ update userId [UserTokenExpiresAt =. newTokenExpiresAt]
 
     getEmailCreds email = liftHandler $ runDB $ do
-        mu <- getBy $ UniqueUser email
-        case mu of
+        maybeUser <- getBy $ UniqueUser email
+        case maybeUser of
             Nothing -> return Nothing
-            Just (Entity uid u) -> return $ Just EmailCreds
-                { emailCredsId = uid
-                , emailCredsAuthId = Just uid
-                , emailCredsStatus = userVerified u
-                , emailCredsVerkey = userVerkey u
-                , emailCredsTokenExpiresAt = userTokenExpiresAt u
+            Just (Entity userId user) -> return $ Just EmailCreds
+                { emailCredsId = userId
+                , emailCredsAuthId = Just userId
+                , emailCredsStatus = userVerified user
+                , emailCredsVerkey = userVerkey user
+                , emailCredsTokenExpiresAt = userTokenExpiresAt user
                 , emailCredsEmail = email
                 }
 
