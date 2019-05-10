@@ -222,7 +222,7 @@ registerHelper forgotPassword = do
   $(logInfo) $ T.pack $ show jsonRegisterForgotPasswordCredsParseResult
   messageRender <- getMessageRender
   y <- getYesod -- It is used to produce randomKey
-  emailIdentifier <-
+  eitherRegisterForgotPasswordCreds <-
     case jsonRegisterForgotPasswordCredsParseResult of
       MalformedRegisterForgotPasswordJSON -> do
         $(logError) $ messageRender Msg.MalformedJSONMessage
@@ -251,7 +251,7 @@ registerHelper forgotPassword = do
         | otherwise -> do
           $(logError) $ messageRender Msg.InvalidEmailAddress
           return $ Left Msg.InvalidEmailAddress
-  case emailIdentifier of
+  case eitherRegisterForgotPasswordCreds of
     Left message -> provideJsonMessage $ messageRender message
     Right (RegisterCreds email password) -> do
       mecreds <- getEmailCreds email
