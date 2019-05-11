@@ -157,7 +157,7 @@ englishMessage (MissingVerificationKeyInternalMessage userId verificationKey) = 
   `mappend` verificationKey `mappend` " but stored verification key was not set"
 englishMessage (UnableToDecryptUserId encryptedUserId) = "Unable to decrypt " `mappend` encryptedUserId
 englishMessage (NoSuchUser email) = "No user with email " `mappend` email `mappend` " found"
-englishMessage (VerificationTokenExpiredAtInternal userId expiresAt) = "Verification token for user " `mappend` userId `mappend` " has expired at " `mappend` (pack $ show expiresAt)
-englishMessage (VerificationTokenExpired) = "Your verification link has expired. Please re-register your account"
+englishMessage (VerificationTokenExpiredAtInternal userId expiresAt) = "Verification token for user " `mappend` userId `mappend` " has expired at " `mappend` pack (show expiresAt)
+englishMessage VerificationTokenExpired = "Your verification link has expired. Please re-register your account"
 englishMessage VerificationFailure = "Email Verification was unsuccessful"
 englishMessage ResetPasswordFailure = "Resetting password was unsuccessful"

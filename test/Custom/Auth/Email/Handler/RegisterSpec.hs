@@ -4,6 +4,7 @@
 
 module Custom.Auth.Email.Handler.RegisterSpec (spec) where
 
+import Data.Time.Clock
 import TestImport
 
 spec :: Spec
@@ -156,13 +157,13 @@ spec = withApp $ do
                     "  - A POST parameter named _token (which is not currently set)</p>\n" ++
                     "</body></html>"
 
-    it "with valid email and password and invalid user in db gives a 200 and the body contains \"message\":\"User row example@gmail.com not in valid state\"" $ do
+    it "with valid email and password and invalid user in db gives a 200 and the body contains \"message\":\"Registration was unsuccessful due to an internal error\"" $ do
 
       getCheckR
 
-      runDB $ do
+      _ <- runDB $ do
         now <- liftIO getCurrentTime
-        _ <- insertEntity User
+        insertEntity User
             { userEmail = email
             , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
             , userVerified = True
@@ -173,7 +174,7 @@ spec = withApp $ do
       postRegisterRWithToken encoded
 
       statusIs 200
-      bodyContains "\"message\":\"User row example@gmail.com not in valid state\""
+      bodyContains "\"message\":\"Registration was unsuccessful due to an internal error\""
 
   describe "Get request to http://localhost:3000/auth/plugin/email/register" $
 

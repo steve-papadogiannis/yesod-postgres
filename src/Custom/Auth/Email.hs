@@ -294,7 +294,7 @@ registerHelper forgotPassword = do
             return Nothing
       case registerCreds of
         Nothing     -> loginErrorMessageI Msg.ForgotPasswordFailure
-        Just creds1 -> do
+        Just creds1@(authId, _, _, _) -> do
           now <- liftIO getCurrentTime
           let tokenExpiresAt = addUTCTime nominalDay now
           renewTokenExpiresAt authId tokenExpiresAt
@@ -303,16 +303,16 @@ registerHelper forgotPassword = do
       $(logError) $ T.pack "Invalid pattern match"
       loginErrorMessageI Msg.RegistrationFailure
   where sendResetPasswordEmailHandler (authId, _, verificationToken, email') =
-          sendEmailHandler (authId, _, verificationToken, email') resetPasswordR sendResetPasswordEmail resetPasswordEmailSentResponse
+          sendEmailHandler (authId, verificationToken, email') resetPasswordR sendResetPasswordEmail resetPasswordEmailSentResponse
         sendConfirmationEmail (authId, _, verificationToken, _, email') =
-          sendEmailHandler (authId, _, verificationToken, _, email') emailVerificationR sendVerifyEmail confirmationEmailSentResponse
-        sendEmailHandler (authId, _, verificationToken, email') authRoute sendEmailFunction responseHandler = do
+          sendEmailHandler (authId, verificationToken, email') emailVerificationR sendVerifyEmail confirmationEmailSentResponse
+        sendEmailHandler (authId, verificationToken, email') authRouteParam sendEmailFunction responseHandler = do
           render <- getUrlRender
           tp <- getRouteToParent
           encryptedAndUrlEncodedUserId <- encryptAndUrlEncode . toPathPiece $ authId
           encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode verificationToken
-          let url = render $ tp $ authRoute encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
-          sendEmailFunction email' verificationToken url
+          let url = render $ tp $ authRouteParam encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+          _ <- sendEmailFunction email' verificationToken url
           responseHandler email'
 
 postRegisterR :: YesodAuthEmail master => AuthHandler master Value
