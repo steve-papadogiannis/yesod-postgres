@@ -56,6 +56,25 @@ spec = withApp $
       statusIs 200
       bodyContains "\"message\":\"Malformed Credentials JSON\""
 
+    it "with empty json request body gives a 200 and the response body contains \"message\":\"No email provided\"" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let emptyBody = emptyObject
+          encodedEmptyBody = encode emptyBody
+      
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encodedEmptyBody encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"No email provided\""
+
+
 --    it "gives a 200 and the body contains \"message\":\"Password updated\"" $ do
 --
 --      userEntity <- createUser "steve.papadogiannis1992@gmail.com"
