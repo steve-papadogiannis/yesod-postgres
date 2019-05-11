@@ -350,7 +350,7 @@ getEmailVerificationR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationT
             (True, Just email) -> do
               maybeStoredTokenExpiresAt <- getTokenExpiresAt userId'
               case maybeStoredTokenExpiresAt of
-                Just storedTokenExpiresAt -> do
+                Just storedTokenExpiresAt ->
                   if now > storedTokenExpiresAt then do
                     $(logError) $ messageRender $ Msg.VerificationTokenExpiredAtInternal (T.pack $ show userId') storedTokenExpiresAt
                     provideJsonMessage $ messageRender Msg.VerificationTokenExpired
@@ -530,6 +530,7 @@ data JSONResetPasswordCredsParseResult
 
 postResetPasswordR :: YesodAuthEmail site => Text -> Text -> AuthHandler site Value
 postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToken = do
+  checkCsrfHeaderOrParam defaultCsrfHeaderName defaultCsrfParamName -- Check if csrf token is added in request
   (creds :: Result Value) <- parseCheckJsonBody
   jsonResetPasswordCredsParseResult <-
        case creds of
@@ -568,13 +569,13 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
           provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
         Just verificationToken ->
           case jsonResetPasswordCredsParseResult of
-            MalformedResetPasswordJSON -> loginErrorMessageI Msg.MalformedJSONMessage
+            MalformedResetPasswordJSON -> provideJsonMessage $ messageRender Msg.MalformedJSONMessage
             MissingNewPassword -> do
               $(logError) $ messageRender $ Msg.MissingNewPasswordInternalMessage $ T.pack $ show userId
-              loginErrorMessageI Msg.MissingNewPasswordMessage
+              provideJsonMessage $ messageRender Msg.MissingNewPasswordMessage
             MissingConfirmPassword -> do
               $(logError) $ messageRender $ Msg.MissingConfirmPasswordInternalMessage $ T.pack $ show userId
-              loginErrorMessageI Msg.MissingConfirmPasswordMessage
+              provideJsonMessage $ messageRender Msg.MissingConfirmPasswordMessage
             ResetPasswordCreds newPassword confirmPassword
               | newPassword == confirmPassword -> do
                 let maybeUserId' = fromPathPiece userId

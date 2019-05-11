@@ -21,10 +21,10 @@ spec = withApp $ do
           setRequestBody encoded
           addRequestHeader ("Content-Type", "application/json")
 
-    let postRegisterR encoded =
+    let postForgotPasswordR encoded =
           request $ basicRequestBuilder encoded
 
-    let postRegisterRWithToken encoded =
+    let postForgotPasswordRWithToken encoded =
           request $ do
             basicRequestBuilder encoded
             addTokenFromCookie
@@ -39,7 +39,7 @@ spec = withApp $ do
 
       let malformedJson = encodeUtf8 "{\"adsfasdf\":\"dfadfas\",}"
 
-      postRegisterRWithToken malformedJson
+      postForgotPasswordRWithToken malformedJson
 
       statusIs 200
       bodyContains "\"message\":\"Malformed Credentials JSON\""
@@ -51,7 +51,7 @@ spec = withApp $ do
       let emptyBody = emptyObject
           encodedEmptyBody = encode emptyBody
 
-      postRegisterRWithToken encodedEmptyBody
+      postForgotPasswordRWithToken encodedEmptyBody
 
       statusIs 200
       bodyContains "\"message\":\"No email provided\""
@@ -64,7 +64,7 @@ spec = withApp $ do
           invalidBody = object [ "email" .= invalidEmail ]
           invalidBodyEncoded = encode invalidBody
 
-      postRegisterRWithToken invalidBodyEncoded
+      postForgotPasswordRWithToken invalidBodyEncoded
 
       statusIs 200
       bodyContains "\"message\":\"Invalid email address provided\""
@@ -73,7 +73,7 @@ spec = withApp $ do
 
       getCheckR
 
-      postRegisterRWithToken encoded
+      postForgotPasswordRWithToken encoded
 
       statusIs 200
       bodyContains "\"message\":\"Forgot Password request was unsuccessful due to an internal error\""
@@ -86,7 +86,7 @@ spec = withApp $ do
           additionalFieldBody = object [ "email" .= email, "password" .= password ]
           additionalFieldBodyEncoded = encode additionalFieldBody
 
-      postRegisterRWithToken additionalFieldBodyEncoded
+      postForgotPasswordRWithToken additionalFieldBodyEncoded
 
       statusIs 200
       bodyContains "\"message\":\"Forgot Password request was unsuccessful due to an internal error\""
@@ -101,7 +101,7 @@ spec = withApp $ do
           bodyWithCapitalizedEmail = object [ "email" .= capitalizedEmail ]
           encodedBodyWithCapitalizedEmail = encode bodyWithCapitalizedEmail
 
-      postRegisterRWithToken encodedBodyWithCapitalizedEmail
+      postForgotPasswordRWithToken encodedBodyWithCapitalizedEmail
 
       statusIs 200
       bodyContains "\"message\":\"A reset password e-mail has been sent to example@gmail.com.\""
@@ -112,14 +112,14 @@ spec = withApp $ do
 
       _ <- createUser ("example@gmail.com" :: Text)
 
-      postRegisterRWithToken encoded
+      postForgotPasswordRWithToken encoded
 
       statusIs 200
       bodyContains "\"message\":\"A reset password e-mail has been sent to example@gmail.com.\""
 
     it "with valid email and password gives a 403 and the body contains csrf text" $ do
 
-      postRegisterR encoded
+      postForgotPasswordR encoded
 
       statusIs 403
       bodyContains $ "<!DOCTYPE html>\n" ++

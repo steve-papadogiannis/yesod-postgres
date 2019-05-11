@@ -3,16 +3,22 @@
 
 module Custom.Auth.EmailSpec (spec) where
 
-import qualified Data.Text                  as T
+import qualified Data.Text            as T
 import           Database.Persist.Sql
 import           TestImport
 
 spec :: Spec
 spec = withApp $
 
-  describe "Post request to SetPasswordR" $
+  describe "Post request to SetPasswordR" $ do
+
+    let getCheckR = do
+          TestImport.get ("http://localhost:3000/auth/check" :: Text)
+          statusIs 200
 
     it "gives a 200 and the body contains \"message\":\"Password updated\"" $ do
+
+      getCheckR
 
       userEntity <- createUser "steve.papadogiannis1992@gmail.com"
       let (Entity _id _) = userEntity
@@ -31,6 +37,7 @@ spec = withApp $
         setUrl $ AuthR $ PluginR "email" ["reset-password", encryptedAndUrlEncodedUserId, encryptedAndUrlEncodedVerificationToken]
         setRequestBody encoded
         addRequestHeader ("Content-Type", "application/json")
+        addTokenFromCookie
 
       statusIs 200
 
