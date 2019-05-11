@@ -293,7 +293,7 @@ registerHelper forgotPassword = do
             $(logError) $ messageRender $ Msg.UserRowNotInValidState email
             return Nothing
       case registerCreds of
-        Nothing     -> loginErrorMessageI Msg.ForgotPasswordFailure
+        Nothing     -> provideJsonMessage $ messageRender Msg.ForgotPasswordFailure
         Just creds1@(authId, _, _, _) -> do
           now <- liftIO getCurrentTime
           let tokenExpiresAt = addUTCTime nominalDay now
