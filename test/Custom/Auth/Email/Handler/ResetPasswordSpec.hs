@@ -32,25 +32,28 @@ spec = withApp $ do
             basicRequestBuilder encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
             addTokenFromCookie
 
-    let email        = "example@gmail.com" :: Text
-        new          = "password"           :: Text
-        confirm      = "password"           :: Text
-        weakPassword = "pa"                 :: Text
-        body         = object [ "new" .= new, "confirm" .= confirm ]
-        encoded      = encode body
+    let email         = "example@gmail.com" :: Text
+        new           = "password"           :: Text
+        confirm       = "password"           :: Text
+        weakPassword  = "pa"                 :: Text
+        body          = object [ "new" .= new, "confirm" .= confirm ]
+        encoded       = encode body
+        extractId key = T.pack . show . unSqlBackendKey . unUserKey $ key
+
+    let mUserEntity                   = createUser "example@gmail.com"
+        mEncryptedAndUrlEncodedUserId = encryptAndUrlEncode . extractId
+        mEncryptedAndUrlEncodedVerificationToken = encryptAndUrlEncode "a"
 
     it "with malformed json request body gives a 200 and the response body contains \"message\":\"Malformed Credentials JSON\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
       let malformedJson = encodeUtf8 "{\"adsfasdf\":\"dfadfas\",}"
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken malformedJson encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -59,17 +62,15 @@ spec = withApp $ do
 
     it "with empty json request body gives a 200 and the response body contains \"message\":\"No newPassword provided\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
       let emptyBody = emptyObject
           encodedEmptyBody = encode emptyBody
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
-      
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encodedEmptyBody encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -78,17 +79,15 @@ spec = withApp $ do
 
     it "with newPassword json request body gives a 200 and the response body contains \"message\":\"No confirmPassword provided\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
       let bodyWithoutConfirmPassword = object [ "new" .= new ]
           encodedBodyWithoutConfirmPassword = encode bodyWithoutConfirmPassword
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encodedBodyWithoutConfirmPassword encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -97,17 +96,15 @@ spec = withApp $ do
 
     it "with confirmPassword json request body gives a 200 and the response body contains \"message\":\"No newPassword provided\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
       let bodyWithoutNewPassword = object [ "confirm" .= confirm ]
           encodedBodyWithoutNewPassword = encode bodyWithoutNewPassword
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encodedBodyWithoutNewPassword encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -118,7 +115,7 @@ spec = withApp $ do
 
       getCheckR
 
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encoded "asfjklasjdflk" encryptedAndUrlEncodedVerificationToken
 
@@ -127,14 +124,11 @@ spec = withApp $ do
 
     it "with invalid encryptedVerificationToken gives a 200 and the response body contains \"message\":\"Unable to decrypt asfjklasjdflk\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
-      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
-
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
 
       postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId "asfjklasjdflk"
 
@@ -146,26 +140,36 @@ spec = withApp $ do
       getCheckR
 
       encryptedAndUrlEncodedUserId <- encryptAndUrlEncode "a"
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
       statusIs 200
       bodyContains "\"message\":\"Unable to parse path piece a\""
 
+    it "with invalid userId gives a 200 and the response body contains \"message\":\"Invalid verification key\"" $ do
+
+      getCheckR
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode "1"
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
+
+      postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Invalid verification key\""
+
     it "with different new and confirm password json request body gives a 200 and the response body contains \"message\":\"Passwords did not match, please try again\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
       let bodyWithDifferentPasswords = object [ "new" .= new, "confirm" .= ("password1" :: Text) ]
           encodedBodyWithDifferentPasswords = encode bodyWithDifferentPasswords
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encodedBodyWithDifferentPasswords encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -174,17 +178,15 @@ spec = withApp $ do
 
     it "with weak new and confirm password json request body gives a 200 and the response body contains \"message\":\"Password must be at least three characters\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
       let bodyWithWeakPasswords = object [ "new" .= weakPassword, "confirm" .= weakPassword ]
           encodedBodyWithWeakPasswords = encode bodyWithWeakPasswords
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encodedBodyWithWeakPasswords encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -193,14 +195,11 @@ spec = withApp $ do
 
     it "with invalid verification token gives a 200 and the response body contains \"message\":\"Invalid verification key\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
-      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
-
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
       encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "b"
 
       postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
@@ -223,9 +222,8 @@ spec = withApp $ do
       getCheckR
 
       let (Entity _id _) = userEntity
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
       encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "b"
 
       postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
@@ -248,10 +246,9 @@ spec = withApp $ do
       getCheckR
 
       let (Entity _id _) = userEntity
-          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
 
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -260,15 +257,12 @@ spec = withApp $ do
 
     it "with valid json request body gives a 200 and the response body contains \"message\":\"Password updated\"" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
+      (Entity _id _) <- mUserEntity
 
       getCheckR
 
-      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
-
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedUserId <- mEncryptedAndUrlEncodedUserId _id
+      encryptedAndUrlEncodedVerificationToken <- mEncryptedAndUrlEncodedVerificationToken
 
       postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
@@ -277,15 +271,7 @@ spec = withApp $ do
 
     it "with valid json request body gives a 403 and the body contains csrf text" $ do
 
-      userEntity <- createUser "example@gmail.com"
-      let (Entity _id _) = userEntity
-
-      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
-
-      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
-      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
-
-      postResetPasswordR encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+      postResetPasswordR encoded "a" "b"
 
       statusIs 403
       bodyContains $ "<!DOCTYPE html>\n" ++
