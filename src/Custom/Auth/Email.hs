@@ -565,8 +565,8 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
       maybeVerificationToken <- decryptAndUrlDecode urlEncodedEncryptedVerificationToken
       case maybeVerificationToken of
         Nothing -> do
-          $(logError) $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
-          provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
+          $(logError) $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedVerificationToken
+          provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedVerificationToken
         Just verificationToken ->
           case jsonResetPasswordCredsParseResult of
             MalformedResetPasswordJSON -> provideJsonMessage $ messageRender Msg.MalformedJSONMessage
@@ -588,7 +588,7 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                     case isSecure of
                       Left e -> do
                         $(logError) e
-                        loginErrorMessage e
+                        provideJsonMessage e
                       Right () -> do
                         storedVerificationKey <- getVerificationToken userId'
                         case (storedVerificationKey, verificationToken) of
@@ -600,7 +600,7 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                                   now <- liftIO getCurrentTime
                                   if now > storedTokenExpiresAt then do
                                     $(logError) $ messageRender $ Msg.VerificationTokenExpiredAtInternal (T.pack $ show userId') storedTokenExpiresAt
-                                    provideJsonMessage $ messageRender Msg.VerificationTokenExpired
+                                    provideJsonMessage $ messageRender Msg.VerificationTokenExpired2
                                   else do
                                     salted <- hashAndSaltPassword newPassword
                                     $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
@@ -613,13 +613,13 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                             | otherwise -> do
                               $(logError) $ messageRender $ Msg.InvalidVerificationKeyInternalMessage (T.pack $ show userId)
                                 vk value
-                              loginErrorMessageI Msg.InvalidVerificationKey
+                              provideJsonMessage $ messageRender Msg.InvalidVerificationKey
                           (Nothing, vk) -> do
                             $(logError) $ messageRender $ Msg.MissingVerificationKeyInternalMessage (T.pack $ show userId) vk
-                            loginErrorMessageI Msg.InvalidVerificationKey
+                            provideJsonMessage $ messageRender Msg.InvalidVerificationKey
               | otherwise -> do
                 $(logError) $ messageRender $ Msg.PassMismatchInternalMessage $ T.pack $ show userId
-                loginErrorMessageI Msg.PassMismatch
+                provideJsonMessage $ messageRender Msg.PassMismatch
 
 saltLength :: Int
 saltLength = 5

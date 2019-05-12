@@ -80,6 +80,7 @@ data AuthMessage
   | VerificationTokenExpired
   | VerificationFailure
   | ResetPasswordFailure
+  | VerificationTokenExpired2
 
 {-# DEPRECATED
 Logout "Please, use LogoutTitle instead."
@@ -159,5 +160,6 @@ englishMessage (UnableToDecryptUserId encryptedUserId) = "Unable to decrypt " `m
 englishMessage (NoSuchUser email) = "No user with email " `mappend` email `mappend` " found"
 englishMessage (VerificationTokenExpiredAtInternal userId expiresAt) = "Verification token for user " `mappend` userId `mappend` " has expired at " `mappend` pack (show expiresAt)
 englishMessage VerificationTokenExpired = "Your verification link has expired. Please re-register your account"
+englishMessage VerificationTokenExpired2 = "Your reset password link has expired"
 englishMessage VerificationFailure = "Email Verification was unsuccessful"
 englishMessage ResetPasswordFailure = "Resetting password was unsuccessful"

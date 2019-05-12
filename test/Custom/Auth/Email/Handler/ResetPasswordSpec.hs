@@ -6,10 +6,11 @@ module Custom.Auth.Email.Handler.ResetPasswordSpec (spec) where
 
 import qualified Data.Text            as T
 import           Database.Persist.Sql
+import           Data.Time.Clock
 import           TestImport
 
 spec :: Spec
-spec = withApp $
+spec = withApp $ do
 
   describe "Post request to http://localhost:3000/auth/plugin/email/reset-password" $ do
 
@@ -56,7 +57,7 @@ spec = withApp $
       statusIs 200
       bodyContains "\"message\":\"Malformed Credentials JSON\""
 
-    it "with empty json request body gives a 200 and the response body contains \"message\":\"No email provided\"" $ do
+    it "with empty json request body gives a 200 and the response body contains \"message\":\"No newPassword provided\"" $ do
 
       userEntity <- createUser "example@gmail.com"
       let (Entity _id _) = userEntity
@@ -65,6 +66,7 @@ spec = withApp $
 
       let emptyBody = emptyObject
           encodedEmptyBody = encode emptyBody
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
       
       encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
       encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
@@ -72,31 +74,235 @@ spec = withApp $
       postResetPasswordRWithToken encodedEmptyBody encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
 
       statusIs 200
-      bodyContains "\"message\":\"No email provided\""
+      bodyContains "\"message\":\"No newPassword provided\""
 
+    it "with newPassword json request body gives a 200 and the response body contains \"message\":\"No confirmPassword provided\"" $ do
 
---    it "gives a 200 and the body contains \"message\":\"Password updated\"" $ do
---
---      userEntity <- createUser "steve.papadogiannis1992@gmail.com"
---      let (Entity _id _) = userEntity
---
---      let newPassword = "newPassword" :: Text
---          confirmPassword = "newPassword" :: Text
---          body = object [ "new" .= newPassword, "confirm" .= confirmPassword ]
---          encoded = encode body
---          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
---
---      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
---      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
---
---      request $ do
---        setMethod "POST"
---        setUrl $ AuthR $ PluginR "email" ["reset-password", encryptedAndUrlEncodedUserId , encryptedAndUrlEncodedVerificationToken]
---        setRequestBody encoded
---        addRequestHeader ("Content-Type", "application/json")
---
---      statusIs 200
---
-----            [Entity _id user] <- runDB $ selectList [UserVerkey ==. Just "a"] []
-----            assertEq "Should have " comment (Comment message Nothing)
---      bodyContains "\"message\":\"Password updated\""
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let bodyWithoutConfirmPassword = object [ "new" .= new ]
+          encodedBodyWithoutConfirmPassword = encode bodyWithoutConfirmPassword
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encodedBodyWithoutConfirmPassword encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"No confirmPassword provided\""
+
+    it "with confirmPassword json request body gives a 200 and the response body contains \"message\":\"No newPassword provided\"" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let bodyWithoutNewPassword = object [ "confirm" .= confirm ]
+          encodedBodyWithoutNewPassword = encode bodyWithoutNewPassword
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encodedBodyWithoutNewPassword encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"No newPassword provided\""
+
+    it "with invalid encryptedUserId gives a 200 and the response body contains \"message\":\"Unable to decrypt asfjklasjdflk\"" $ do
+
+      getCheckR
+
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encoded "asfjklasjdflk" encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Unable to decrypt asfjklasjdflk\""
+
+    it "with invalid encryptedVerificationToken gives a 200 and the response body contains \"message\":\"Unable to decrypt asfjklasjdflk\"" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+
+      postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId "asfjklasjdflk"
+
+      statusIs 200
+      bodyContains "\"message\":\"Unable to decrypt asfjklasjdflk\""
+
+    it "with invalid userId gives a 200 and the response body contains \"message\":\"Unable to parse path piece a\"" $ do
+
+      getCheckR
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode "a"
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Unable to parse path piece a\""
+
+    it "with different new and confirm password json request body gives a 200 and the response body contains \"message\":\"Passwords did not match, please try again\"" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let bodyWithDifferentPasswords = object [ "new" .= new, "confirm" .= ("password1" :: Text) ]
+          encodedBodyWithDifferentPasswords = encode bodyWithDifferentPasswords
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encodedBodyWithDifferentPasswords encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Passwords did not match, please try again\""
+
+    it "with weak new and confirm password json request body gives a 200 and the response body contains \"message\":\"Password must be at least three characters\"" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let bodyWithWeakPasswords = object [ "new" .= weakPassword, "confirm" .= weakPassword ]
+          encodedBodyWithWeakPasswords = encode bodyWithWeakPasswords
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encodedBodyWithWeakPasswords encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Password must be at least three characters\""
+
+    it "with invalid verification token gives a 200 and the response body contains \"message\":\"Invalid verification key\"" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "b"
+
+      postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Invalid verification key\""
+
+    it "with invalid stored verification token gives a 200 and the response body contains \"message\":\"Invalid verification key\"" $ do
+
+      userEntity <- runDB $ do
+        now <- liftIO getCurrentTime
+        insertEntity User
+            { userEmail = email
+            , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
+            , userVerified = True
+            , userVerkey = Nothing
+            , userTokenExpiresAt = addUTCTime nominalDay now
+            }
+
+      getCheckR
+
+      let (Entity _id _) = userEntity
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "b"
+
+      postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Invalid verification key\""
+
+    it "with expired verification token gives a 200 and the response body contains \"message\":\"Your reset password link has expired\"" $ do
+
+      userEntity <- runDB $ do
+        now <- liftIO getCurrentTime
+        insertEntity User
+            { userEmail = email
+            , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
+            , userVerified = True
+            , userVerkey = Just ("a" :: Text)
+            , userTokenExpiresAt = now
+            }
+
+      getCheckR
+
+      let (Entity _id _) = userEntity
+          userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Your reset password link has expired\""
+
+    it "with valid json request body gives a 200 and the response body contains \"message\":\"Password updated\"" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      getCheckR
+
+      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordRWithToken encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 200
+      bodyContains "\"message\":\"Password updated\""
+
+    it "with valid json request body gives a 403 and the body contains csrf text" $ do
+
+      userEntity <- createUser "example@gmail.com"
+      let (Entity _id _) = userEntity
+
+      let userId = T.pack . show . unSqlBackendKey . unUserKey $ _id
+
+      encryptedAndUrlEncodedUserId <- encryptAndUrlEncode userId
+      encryptedAndUrlEncodedVerificationToken <- encryptAndUrlEncode "a"
+
+      postResetPasswordR encoded encryptedAndUrlEncodedUserId encryptedAndUrlEncodedVerificationToken
+
+      statusIs 403
+      bodyContains $ "<!DOCTYPE html>\n" ++
+                     "<html><head><title>Permission Denied</title></head><body><h1>Permission Denied</h1>\n" ++
+                     "<p>A valid CSRF token wasn&#39;t present. Because the request could have been forged, it&#39;s been rejected altogether.\n" ++
+                     "If you&#39;re a developer of this site, these tips will help you debug the issue:\n" ++
+                     "- Read the Yesod.Core.Handler docs of the yesod-core package for details on CSRF protection.\n" ++
+                     "- Check that your HTTP client is persisting cookies between requests, like a browser does.\n" ++
+                     "- By default, the CSRF token is sent to the client in a cookie named XSRF-TOKEN.\n" ++
+                     "- The server is looking for the token in the following locations:\n" ++
+                     "  - An HTTP header named X-XSRF-TOKEN (which is not currently set)\n" ++
+                     "  - A POST parameter named _token (which is not currently set)</p>\n" ++
+                     "</body></html>"
+
+  describe "Get request to http://localhost:3000/auth/plugin/email/reset-password" $
+
+    it "gives a 404 Not Found" $ do
+
+      TestImport.get ("http://localhost:3000/auth/plugin/email/reset-password" :: Text)
+      statusIs 404
