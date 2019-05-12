@@ -336,39 +336,44 @@ getEmailVerificationR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationT
     Nothing -> do
       $(logError) $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
       provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedUserId
-    Just userId -> do
-      let maybeUserId' = fromPathPiece userId
-      case maybeUserId' of
+    Just userId ->
+      case maybeVerificationToken of
         Nothing -> do
-          $(logError) $ (T.pack "Unable to parse path piece ") `T.append` userId
-          provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` userId
-        Just userId' -> do
-          now <- liftIO getCurrentTime
-          realKey <- getVerificationToken userId'
-          memail <- getEmail userId'
-          case (realKey == maybeVerificationToken, memail) of
-            (True, Just email) -> do
-              maybeStoredTokenExpiresAt <- getTokenExpiresAt userId'
-              case maybeStoredTokenExpiresAt of
-                Just storedTokenExpiresAt ->
-                  if now > storedTokenExpiresAt then do
-                    $(logError) $ messageRender $ Msg.VerificationTokenExpiredAtInternal (T.pack $ show userId') storedTokenExpiresAt
-                    provideJsonMessage $ messageRender Msg.VerificationTokenExpired
-                  else do
-                    muid <- verifyAccount userId'
-                    case muid of
-                      Nothing -> invalidKey messageRender
-                      Just _ -> do
-                        setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
-                        let msgAv = Msg.AddressVerified
-                        provideJsonMessage $ messageRender msgAv
-                Nothing -> do
-                  $(logError) $ messageRender $ Msg.UserRowNotInValidState (T.pack $ show userId)
-                  provideJsonMessage $ messageRender Msg.VerificationFailure
-            _ -> invalidKey messageRender
-          where
-            msgIk = Msg.InvalidKey
-            invalidKey mr = messageJson401 (mr msgIk)
+          $(logError) $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedVerificationToken
+          provideJsonMessage $ messageRender $ Msg.UnableToDecryptUserId urlEncodedEncryptedVerificationToken
+        Just verificationToken -> do
+          let maybeUserId' = fromPathPiece userId
+          case maybeUserId' of
+            Nothing -> do
+              $(logError) $ messageRender $ Msg.UnableToParsePathPiece userId
+              provideJsonMessage $ messageRender $ Msg.UnableToParsePathPiece userId
+            Just userId' -> do
+              now <- liftIO getCurrentTime
+              realKey <- getVerificationToken userId'
+              memail <- getEmail userId'
+              case (realKey == Just verificationToken, memail) of
+                (True, Just email) -> do
+                  maybeStoredTokenExpiresAt <- getTokenExpiresAt userId'
+                  case maybeStoredTokenExpiresAt of
+                    Just storedTokenExpiresAt ->
+                      if now > storedTokenExpiresAt then do
+                        $(logError) $ messageRender $ Msg.VerificationTokenExpiredAtInternal (T.pack $ show userId') storedTokenExpiresAt
+                        provideJsonMessage $ messageRender Msg.VerificationTokenExpired
+                      else do
+                        muid <- verifyAccount userId'
+                        case muid of
+                          Nothing -> invalidKey messageRender
+                          Just _ -> do
+                            setCreds $ Creds "email-verify" email [("verifiedEmail", email)] -- FIXME uid?
+                            let msgAv = Msg.AddressVerified
+                            provideJsonMessage $ messageRender msgAv
+                    Nothing -> do
+                      $(logError) $ messageRender $ Msg.UserRowNotInValidState (T.pack $ show userId)
+                      provideJsonMessage $ messageRender Msg.VerificationFailure
+                _ -> invalidKey messageRender
+              where
+                msgIk = Msg.InvalidKey
+                invalidKey mr = provideJsonMessage (mr msgIk)
 
 parseEmailField :: Value -> Parser Text
 parseEmailField =
