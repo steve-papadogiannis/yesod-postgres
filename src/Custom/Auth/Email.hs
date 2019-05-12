@@ -581,8 +581,8 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                 let maybeUserId' = fromPathPiece userId
                 case maybeUserId' of
                   Nothing -> do
-                    $(logError) $ (T.pack "Unable to parse path piece ") `T.append` userId
-                    provideJsonMessage $ (T.pack "Unable to parse path piece ") `T.append` userId
+                    $(logError) $ messageRender $ Msg.UnableToParsePathPiece $ T.pack $ show userId
+                    provideJsonMessage $ messageRender $ Msg.UnableToParsePathPiece userId
                   Just userId' -> do
                     isSecure <- checkPasswordSecurity newPassword
                     case isSecure of
@@ -603,9 +603,9 @@ postResetPasswordR urlEncodedEncryptedUserId urlEncodedEncryptedVerificationToke
                                     provideJsonMessage $ messageRender Msg.VerificationTokenExpired2
                                   else do
                                     salted <- hashAndSaltPassword newPassword
-                                    $(logInfo) $ T.pack $ "New salted password for user with userId " ++ show userId ++ " is " ++ T.unpack salted
+                                    $(logInfo) $ messageRender $ Msg.NewSaltedPassword (T.pack $ show userId') salted
                                     setPassword userId' salted
-                                    $(logInfo) $ T.pack $ "New password updated for user with userId " ++ show userId
+                                    $(logInfo) $ messageRender $ Msg.NewPasswordUpdated (T.pack $ show userId')
                                     messageJson200 $ messageRender Msg.PassUpdated
                                 Nothing -> do
                                    $(logError) $ messageRender $ Msg.UserRowNotInValidState (T.pack $ show userId)

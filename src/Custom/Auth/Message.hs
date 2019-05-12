@@ -81,6 +81,9 @@ data AuthMessage
   | VerificationFailure
   | ResetPasswordFailure
   | VerificationTokenExpired2
+  | UnableToParsePathPiece Text
+  | NewSaltedPassword Text Text
+  | NewPasswordUpdated Text
 
 {-# DEPRECATED
 Logout "Please, use LogoutTitle instead."
@@ -163,3 +166,6 @@ englishMessage VerificationTokenExpired = "Your verification link has expired. P
 englishMessage VerificationTokenExpired2 = "Your reset password link has expired"
 englishMessage VerificationFailure = "Email Verification was unsuccessful"
 englishMessage ResetPasswordFailure = "Resetting password was unsuccessful"
+englishMessage (UnableToParsePathPiece userId) = "Unable to parse path piece " `mappend` userId
+englishMessage (NewSaltedPassword userId saltedPassword) = "New salted password for user with userId " `mappend` userId `mappend` " is " `mappend` saltedPassword
+englishMessage (NewPasswordUpdated userId) = "New password updated for user with userId " `mappend` userId
