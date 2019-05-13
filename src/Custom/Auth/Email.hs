@@ -448,12 +448,13 @@ postLoginR = do
   $(logInfo) $ T.pack $ show jsonLoginCredsParseResult
   messageRender <- getMessageRender
   case jsonLoginCredsParseResult of
-    MalformedLoginJSON -> loginErrorMessageI Msg.MalformedJSONMessage
-    MissingLoginEmail -> loginErrorMessageI Msg.MissingEmailMessage
-    MissingLoginPassword -> loginErrorMessageI Msg.MissingPasswordMessage
+    MalformedLoginJSON -> provideJsonMessage $ messageRender Msg.MalformedJSONMessage
+    MissingLoginEmail -> provideJsonMessage $ messageRender Msg.MissingEmailMessage
+    MissingLoginPassword -> provideJsonMessage $ messageRender Msg.MissingPasswordMessage
     LoginCreds email password
       | Just email' <- Text.Email.Validate.canonicalizeEmail (encodeUtf8 email) -> do
-        emailCreds <- getEmailCreds $ decodeUtf8With lenientDecode email'
+        y <- getYesod
+        emailCreds <- getEmailCreds $ normalizeEmailAddress y $ decodeUtf8With lenientDecode email'
         loginResult <-
           case (emailCreds >>= emailCredsAuthId, emailCredsEmail <$> emailCreds, emailCredsStatus <$> emailCreds) of
             (Just aid, Just email'', Just True) -> do

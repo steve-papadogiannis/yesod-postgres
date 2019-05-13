@@ -6,22 +6,24 @@ import TestImport
 
 spec :: Spec
 spec = withApp $
-    describe "Profile page" $ do
-        it "asserts no access to my-account for anonymous users" $ do
-            get ProfileR
-            statusIs 403
 
-        it "asserts access to my-account for authenticated users" $ do
-            userEntity <- createUser "steve.papadogiannis@gmail.com"
-            authenticateAs userEntity
+  describe "Profile page" $ do
 
-            get ProfileR
-            statusIs 200
+    it "asserts no access to my-account for anonymous users" $ do
+      get ProfileR
+      statusIs 403
 
-        it "asserts user's information is shown" $ do
-            userEntity <- createUser "steve.papadogiannis@gmail.com"
-            authenticateAs userEntity
+    it "asserts access to my-account for authenticated users" $ do
+      userEntity <- createUser "example@gmail.com"
+      authenticateAs userEntity
 
-            get ProfileR
-            let (Entity _ user) = userEntity
-            assertEq "user table empty" "steve.papadogiannis@gmail.com" $ unpack $ userEmail user
+      get ProfileR
+      statusIs 200
+
+    it "asserts user's information is shown" $ do
+      userEntity <- createUser "example@gmail.com"
+      authenticateAs userEntity
+
+      get ProfileR
+      let (Entity _ user) = userEntity
+      assertEq "user table empty" "example@gmail.com" $ unpack $ userEmail user

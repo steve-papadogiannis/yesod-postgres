@@ -83,9 +83,11 @@ getTables = do
 -- Foundation.hs
 authenticateAs :: Entity User -> YesodExample App ()
 authenticateAs (Entity _ u) = do
+    get ("http://localhost:3000/auth/check" :: Text)
+
     let email = userEmail u
         body = object [ "email" .= email,
-                        "password" .= ("kurwa" :: Text)]
+                        "password" .= ("password" :: Text)]
         encoded = encode body
 
     request $ do
@@ -93,6 +95,7 @@ authenticateAs (Entity _ u) = do
         setUrl $ AuthR $ PluginR "email" ["login"]
         setRequestBody encoded
         addRequestHeader ("Content-Type", "application/json")
+        addTokenFromCookie
 
 
 
@@ -104,7 +107,7 @@ createUser ident =
       now <- liftIO getCurrentTime
       user <- insertEntity User
           { userEmail = ident
-          , userPassword = Just "sha256|16|FnW1y47QCWc85WzoClsjjA==|m5TunH54L9eFCYJyz5UIeVv50E8Uv5+ld3fL3Amev1E="
+          , userPassword = Just "sha256|16|OvqmNn950c2neU9JR5dbRg==|qwqgII7lLdzyXQT8hCpVoqj7cveU/KnupjImpAa5Ob0="
           , userVerified = True
           , userVerkey = Just ("a" :: Text)
           , userTokenExpiresAt = addUTCTime nominalDay now

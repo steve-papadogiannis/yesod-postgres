@@ -16,7 +16,7 @@ spec = withApp $ do
   describe "Get request to CheckR with authenticated user" $
     it "gives a 200 and the body contains \"logged_in\":true" $ do
 
-      userEntity <- createUser "steve.papadogiannis@gmail.com"
+      userEntity <- createUser "example@gmail.com"
       authenticateAs userEntity
 
       get ("http://localhost:3000/auth/check" :: Text)

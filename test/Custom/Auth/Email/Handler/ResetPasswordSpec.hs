@@ -38,7 +38,7 @@ spec = withApp $ do
         weakPassword  = "pa"                 :: Text
         body          = object [ "new" .= new, "confirm" .= confirm ]
         encoded       = encode body
-        extractId key = T.pack . show . unSqlBackendKey . unUserKey $ key
+        extractId     = T.pack . show . unSqlBackendKey . unUserKey
 
     let mUserEntity                   = createUser "example@gmail.com"
         mEncryptedAndUrlEncodedUserId = encryptAndUrlEncode . extractId
