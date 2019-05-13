@@ -44,6 +44,18 @@ spec = withApp $
       statusIs 200
       bodyContains "\"message\":\"Malformed Credentials JSON\""
 
+    it "with empty json request body gives a 200 and the response body contains \"message\":\"No email provided\"" $ do
+
+      getCheckR
+
+      let emptyBody = emptyObject
+          encodedEmptyBody = encode emptyBody
+
+      postForgotPasswordRWithToken encodedEmptyBody
+
+      statusIs 200
+      bodyContains "\"message\":\"No email provided\""
+
     it "gives a 200 and the body contains \"message\":\"Login successful\"" $ do
 
       let email = "steve.papadogiannis1992@gmail.com" :: Text
