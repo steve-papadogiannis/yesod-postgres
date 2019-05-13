@@ -20,10 +20,10 @@ spec = withApp $
           setRequestBody encoded
           addRequestHeader ("Content-Type", "application/json")
 
-    let postForgotPasswordR encoded =
+    let postLoginR encoded =
           request $ basicRequestBuilder encoded
 
-    let postForgotPasswordRWithToken encoded =
+    let postLoginRWithToken encoded =
           request $ do
             basicRequestBuilder encoded
             addTokenFromCookie
@@ -32,6 +32,17 @@ spec = withApp $
         password     = "password"
         body         = object [ "email" .= email, "password" .= password ]
         encoded      = encode body
+
+    it "with malformed json request body gives a 200 and the response body contains \"message\":\"Malformed Credentials JSON\"" $ do
+
+      getCheckR
+
+      let malformedJson = encodeUtf8 "{\"adsfasdf\":\"dfadfas\",}"
+
+      postLoginRWithToken malformedJson
+
+      statusIs 200
+      bodyContains "\"message\":\"Malformed Credentials JSON\""
 
     it "gives a 200 and the body contains \"message\":\"Login successful\"" $ do
 
