@@ -421,6 +421,7 @@ data LoginResult
 
 postLoginR :: YesodAuthEmail master => AuthHandler master Value
 postLoginR = do
+  checkCsrfHeaderOrParam defaultCsrfHeaderName defaultCsrfParamName -- Check if csrf token is added in request
   jsonLoginCredsParseResult <-
     do (creds :: Result Value) <- parseCheckJsonBody
        case creds of
