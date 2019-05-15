@@ -49,27 +49,28 @@ module Custom.Auth
     , asHtml
     ) where
 
-import qualified Data.Text                  as T
-import qualified Data.HashMap.Lazy          as Map
 import qualified Custom.Auth.Message        as Msg
+import qualified Data.HashMap.Lazy          as Map
 import qualified Network.Wai                as W
-import           UnliftIO                  (withRunInIO, MonadUnliftIO)
-import           Data.Aeson                 hiding (json)
-import           Data.Text                  (Text)
-import           Network.HTTP.Client        (Manager, Request, withResponse, Response, BodyReader)
-import           Network.HTTP.Client.TLS    (getGlobalManager)
-import           Custom.Auth.Message        (AuthMessage, defaultMessage)
-import           Yesod.Form                 (FormMessage)
-import           Data.Typeable              (Typeable)
-import           Control.Exception          (Exception)
-import           Network.HTTP.Types         (Status, internalServerError500, unauthorized401, ok200)
-import           Control.Monad              (void)
-import           Data.Text.Encoding         (decodeUtf8With)
+import qualified Data.Text                  as T
 import           Data.Text.Encoding.Error   (lenientDecode)
+import           Network.HTTP.Client.TLS    (getGlobalManager)
+import           Network.HTTP.Client        (Manager, Request, withResponse, Response, BodyReader)
+import           Custom.Auth.Message        (AuthMessage, defaultMessage)
+import           Network.HTTP.Types         (Status, internalServerError500, unauthorized401, ok200)
+import           Data.Text.Encoding         (decodeUtf8With)
+import           Control.Exception          (Exception)
+import           Data.Typeable              (Typeable)
+import           Control.Monad              (void)
+import           Data.Aeson                 hiding (json)
+import           Yesod.Form                 (FormMessage)
+import           Data.Maybe                 (isJust)
+import           Data.Text                  (Text)
+import           UnliftIO                   (withRunInIO, MonadUnliftIO)
 import           Control.Monad.Trans.Maybe
 import           Custom.Auth.Routes
-import           Yesod.Core
 import           Yesod.Persist
+import           Yesod.Core
 
 type AuthRoute = Route Auth
 type MonadAuthHandler master m = (MonadHandler m, YesodAuth master, master ~ HandlerSite m, Auth ~ SubHandlerSite m, MonadUnliftIO m)
@@ -307,7 +308,7 @@ authLayoutJson
   :: (ToJSON j, MonadAuthHandler master m)
   => m j  -- ^ JSON
   -> m Value
-authLayoutJson json = fmap toJSON json
+authLayoutJson = fmap toJSON
 
 -- | Clears current user credentials for the session.
 
@@ -320,12 +321,12 @@ getCheckR = do
     creds <- maybeAuthId
     setCsrfCookie
     let jsonResponse = jsonCreds creds
-    $(logInfo) $ T.pack $ show $ jsonResponse
-    authLayoutJson (return $ jsonResponse)
+    $(logInfo) $ T.pack $ show jsonResponse
+    authLayoutJson (return jsonResponse)
   where
     jsonCreds creds =
         Object $ Map.fromList
-            [ (T.pack "logged_in", Bool $ maybe False (const True) creds)
+            [ (T.pack "logged_in", Bool $ isJust creds)
             ]
 
 postLogoutR :: AuthHandler master ()
